@@ -1,0 +1,6 @@
+python3 CSI_doppler_computation.py data/ "" doppler_output/ 0 1553576 10 1 0.1 
+python3 my_doppler_plot_activities.py doppler_output plots 100 5 0 1000
+python3 my_doppler_computation.py data/ "" doppler_output 0 100 10 1 -2.5 
+
+python3 my_doppler_computation.py data "" doppler_output 0 2000000 128 32 -40
+python3 my_doppler_plot_activities.py doppler_output plots 100 32 0 2000000
