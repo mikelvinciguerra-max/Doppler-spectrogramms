@@ -4,3 +4,4 @@
 *.pyc
 *.txt
 my_venv/*
+my_venv/
