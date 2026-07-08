@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import scipy.io as sio
 import gc
 
@@ -53,8 +54,9 @@ def process_and_save_csi_mean_subtraction(file_path, var_name, overwrite=False):
     sio.savemat(file_path, mat_data)
     print("-> Done!")
 
-process_and_save_csi_mean_subtraction(
-    file_path="data/csi_matrix_processed.mat", 
-    var_name="csi_matrix_processed", 
-    overwrite=True
-)
+dossier = "data_preprocessed"
+
+for file in os.listdir(dossier):
+    if file.endswith(".mat"):
+        file_path = os.path.join(dossier, file)
+        process_and_save_csi_mean_subtraction(file_path, var_name='CSI', overwrite=False)
