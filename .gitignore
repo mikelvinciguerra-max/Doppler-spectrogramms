@@ -3,3 +3,4 @@
 *.npy
 *.pyc
 *.txt
+my_venv/*
