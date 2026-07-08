@@ -7,7 +7,7 @@ import glob
 from plots_utility import plt_doppler_antennas
 import matplotlib.pyplot as plt
 
-def decouper_spectrogramme(stft_log, sliding, chemin_txt='limites_spectogramme_doppler.txt'):
+def decouper_spectrogramme(stft_log, sliding, chemin_txt='limites_spectogramme_doppler.txt', out_dir='plots'):
     print(f"\nReading limits (in seconds) from the file '{chemin_txt}'...")
     
     # 1. Physical parameters (placed at the beginning for conversion)
@@ -59,7 +59,7 @@ def decouper_spectrogramme(stft_log, sliding, chemin_txt='limites_spectogramme_d
     delta_v = v_light / (Tc * fc * num_bins)
     axe_vitesses = (np.arange(num_bins) - num_bins / 2) * delta_v
 
-    dossier_sortie = './plots2'
+    dossier_sortie = out_dir
     if not os.path.exists(dossier_sortie):
         os.makedirs(dossier_sortie)
 
@@ -79,7 +79,8 @@ def decouper_spectrogramme(stft_log, sliding, chemin_txt='limites_spectogramme_d
 
         plt.figure(figsize=(10, 5))
         
-        mesh = plt.pcolormesh(axe_temps_absolu, axe_vitesses, segment.T, cmap='viridis', shading='auto', vmin=vmin_global, vmax=vmax_global)
+        mesh = plt.pcolormesh(axe_temps_absolu, axe_vitesses, segment.T, cmap='viridis',
+                              shading='auto', vmin=-12.0, vmax=0.0)
         
         plt.ylim(-4.5, 4.5) 
         plt.gca().xaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
@@ -141,7 +142,7 @@ if __name__ == '__main__':
         stft_sum_1[stft_sum_1 < seuil] = seuil
         stft_sum_1_log = 10 * np.log10(stft_sum_1)
 
-        decouper_spectrogramme(stft_sum_1_log, args.sliding)
+        decouper_spectrogramme(stft_sum_1_log, args.sliding, out_dir=args.out_dir)
 
         # Temporal slicing (Zoom)
         stft_sum_1_log = stft_sum_1_log[args.start_plt:min(stft_sum_1_log.shape[0], args.end_plt), :]
