@@ -1,9 +1,9 @@
 import numpy as np
 import scipy.io as sio
-from scipy.signal import butter, filtfilt
 import gc
 
-def process_and_save_csi_clutter_removal(file_path, var_name, sample_rate, cutoff_freq=1.5, filter_order=4, overwrite=False):
+def process_and_save_csi_mean_subtraction(file_path, var_name, overwrite=False):
+    # 1. Loading the file
     try:
         mat_data = sio.loadmat(file_path)
     except FileNotFoundError:
@@ -15,41 +15,32 @@ def process_and_save_csi_clutter_removal(file_path, var_name, sample_rate, cutof
     csi_matrix = mat_data[var_name]
     print(f"-> Loaded CSI matrix dimensions: {csi_matrix.shape}")
     
+    # 2. Dynamic time axis detection
     time_axis = np.argmax(csi_matrix.shape)
     if time_axis != 0:
         print("-> Auto-transposing to set time as the primary axis (axis 0)...")
         csi_matrix = np.swapaxes(csi_matrix, 0, time_axis)
     
-    nyquist_freq = 0.5 * sample_rate
-    normalized_cutoff = cutoff_freq / nyquist_freq
-    b, a = butter(filter_order, normalized_cutoff, btype='highpass', analog=False)
+    # 3. Mean Subtraction (Static Clutter Removal)
+    print("-> Starting Mean Subtraction filtering...")
     
-    print("-> Starting high-pass filtering. This may take a moment for large matrices...")
-    filtered_csi = np.zeros_like(csi_matrix)
+    # Calculate the mean along the time axis (axis 0)
+    # keepdims=True ensures the shape stays compatible for vectorized subtraction
+    static_mean = np.mean(csi_matrix, axis=0, keepdims=True)
     
-    if len(csi_matrix.shape) == 3:
-        num_subcarriers = csi_matrix.shape[1]
-        num_antennas = csi_matrix.shape[2]
-        
-        for ant_idx in range(num_antennas):
-            print(f"   [+] Processing antenna {ant_idx + 1}/{num_antennas}...")
-            for sub_idx in range(num_subcarriers):
-                filtered_csi[:, sub_idx, ant_idx] = filtfilt(b, a, csi_matrix[:, sub_idx, ant_idx])
-                
-    elif len(csi_matrix.shape) == 2:
-        num_subcarriers = csi_matrix.shape[1]
-        print("   [+] Processing subcarriers...")
-        for sub_idx in range(num_subcarriers):
-            filtered_csi[:, sub_idx] = filtfilt(b, a, csi_matrix[:, sub_idx])
-    else:
-        raise ValueError("Unsupported format: matrix has more than 3 dimensions.")
-
+    # Subtract the static environment signature from the entire matrix
+    filtered_csi = csi_matrix - static_mean
+    
+    # 4. RAM Cleanup
     del csi_matrix
+    del static_mean
     gc.collect()
     
+    # Revert transposition if axes were swapped
     if time_axis != 0:
         filtered_csi = np.swapaxes(filtered_csi, 0, time_axis)
     
+    # 5. Saving process
     if overwrite:
         mat_data[var_name] = filtered_csi
         print(f"\n-> Variable '{var_name}' successfully overwritten.")
@@ -62,9 +53,8 @@ def process_and_save_csi_clutter_removal(file_path, var_name, sample_rate, cutof
     sio.savemat(file_path, mat_data)
     print("-> Done!")
 
-process_and_save_csi_clutter_removal(
+process_and_save_csi_mean_subtraction(
     file_path="data/csi_matrix_processed.mat", 
     var_name="csi_matrix_processed", 
-    sample_rate=1000, 
     overwrite=True
 )
