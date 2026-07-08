@@ -54,9 +54,10 @@ def process_and_save_csi_mean_subtraction(file_path, var_name, overwrite=False):
     sio.savemat(file_path, mat_data)
     print("-> Done!")
 
-dossier = "data_preprocessed"
 
-for file in os.listdir(dossier):
-    if file.endswith(".mat"):
-        file_path = os.path.join(dossier, file)
-        process_and_save_csi_mean_subtraction(file_path, var_name='CSI', overwrite=False)
+if __name__ == '__main__':
+    folder = "data_preprocessed"
+    for file in os.listdir(folder):
+        if file.endswith(".mat"):
+            file_path = os.path.join(folder, file)
+            process_and_save_csi_mean_subtraction(file_path, var_name='CSI', overwrite=False)   

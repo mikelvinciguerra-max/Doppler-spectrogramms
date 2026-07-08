@@ -21,9 +21,10 @@ def complex_to_amplitude_phase(file_name):
     sio.savemat("./data_preprocessed/"+os.path.basename(file_name), data)
     print(f"Saved processed file: ./data_preprocessed/{file_name}")
 
-dossier = "data_ehunam"
+if __name__ == '__main__':
+    folder = "data_ehunam"
 
-for file in os.listdir(dossier):
-    if file.endswith(".mat"):
-        file_path = os.path.join(dossier, file)
-        complex_to_amplitude_phase(file_path)
+    for file in os.listdir(folder):
+        if file.endswith(".mat"):
+            file_path = os.path.join(folder, file)
+            complex_to_amplitude_phase(file_path)
