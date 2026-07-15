@@ -1,19 +1,3 @@
-
-"""
-    Copyright (C) 2022 Francesca Meneghello
-    contact: meneghello@dei.unipd.it
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""
-
 import argparse
 import numpy as np
 import scipy.io as sio
@@ -23,6 +7,8 @@ from scipy.fftpack import fftshift
 from scipy.signal.windows import hann
 import pickle
 import os
+import time
+from scipy.ndimage import gaussian_filter1d
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
@@ -55,6 +41,10 @@ if __name__ == '__main__':
 
     list_subdir = args.subdirs
 
+    print("\n" + "#"*60)
+    print("#  DOPPLER COMPUTATION PIPELINE START")
+    print("#"*60)
+
     for subdir in list_subdir.split(','):
         path_doppler = args.dir_doppler + subdir
         if not os.path.exists(path_doppler):
@@ -65,51 +55,40 @@ if __name__ == '__main__':
         names = []
         all_files = os.listdir(exp_dir)
         for i in range(len(all_files)):
-            if (all_files[i][-4:] == '.npy'):
+            if (all_files[i][-4:] == '.mat'):
                 names.append(all_files[i][:-4])
 
-        print("files to compute :", names)
+        print(f"\n[Input] Directory: {exp_dir}")
+        print(f"[Found] {len(names)} files to process")
+        print(f"[Output] Directory: {path_doppler}")
+        print(f"[Parameters] Bandwidth: {bandwidth} MHz, Sample length: {args.sample_length}, Sliding: {sliding}, Noise level: {noise_lev} dB")
+        print("-"*60)
 
         for name in names:
+            file_start = time.time()
             path_doppler_name = path_doppler + '/' + name + '.txt'
-            # if os.path.exists(path_doppler_name):
-            #     continue
+            
+            print(f"\n{'='*60}")
+            print(f"Processing: {name}")
+            print(f"{'='*60}")
 
-            print("new file path :", path_doppler_name)
             name_file = exp_dir + name + '.mat'
-            print("name : ", name_file)
             mdic = sio.loadmat(name_file)
-            csi_matrix_processed = mdic['csi_matrix_processed']
-            print("size of the CSI matrix :",csi_matrix_processed.shape)
+            csi_matrix_processed = mdic['CSI']
+            print(f"  • Input shape: {csi_matrix_processed.shape}")
+            print(f"  • Data type: {csi_matrix_processed.dtype}")
 
             csi_matrix_processed = csi_matrix_processed[args.start:args.end, :, :]
+            print(f"  • Sliced shape: {csi_matrix_processed.shape}")
 
             csi_matrix_processed[:, :, 0] = csi_matrix_processed[:, :, 0] / np.mean(csi_matrix_processed[:, :, 0],
                                                                                     axis=1,  keepdims=True)
             
             csi_matrix_complete = csi_matrix_processed[:, :, 0]*np.exp(1j*csi_matrix_processed[:, :, 1])
 
-            if bandwidth == 40:
-                if sub_band == 1:
-                    selected_subcarriers_idxs = np.arange(0, 117, 1)
-                elif sub_band == 2:
-                    selected_subcarriers_idxs = np.arange(128, 245, 1)
-                num_selected_subcarriers = selected_subcarriers_idxs.shape[0]
-                csi_matrix_complete = csi_matrix_complete[:, selected_subcarriers_idxs]
-            elif bandwidth == 20:
-                if sub_band == 1:
-                    selected_subcarriers_idxs = np.arange(0, 57, 1)
-                elif sub_band == 2:
-                    selected_subcarriers_idxs = np.arange(60, 117, 1)
-                elif sub_band == 3:
-                    selected_subcarriers_idxs = np.arange(128, 185, 1)
-                elif sub_band == 4:
-                    selected_subcarriers_idxs = np.arange(188, 245, 1)
-                num_selected_subcarriers = selected_subcarriers_idxs.shape[0]
-                csi_matrix_complete = csi_matrix_complete[:, selected_subcarriers_idxs]
-
             csi_d_profile_list = []
-            print("size of the CSI matrix complete :", csi_matrix_complete.shape)
+            print(f"  • Computing Doppler profiles...")
+            num_iterations = (csi_matrix_complete.shape[0] - num_symbols) // sliding
             for i in range(0, csi_matrix_complete.shape[0]-num_symbols, sliding):
                 csi_matrix_cut = csi_matrix_complete[i:i+num_symbols, :]
                 csi_matrix_cut = np.nan_to_num(csi_matrix_cut)
@@ -121,11 +100,23 @@ if __name__ == '__main__':
 
                 csi_d_map = np.abs(csi_doppler_prof * np.conj(csi_doppler_prof))
                 csi_d_map = np.sum(csi_d_map, axis=1)
+                
+                csi_d_map = gaussian_filter1d(csi_d_map, sigma=1.0) ###
+                
                 csi_d_profile_list.append(csi_d_map)
             csi_d_profile_array = np.asarray(csi_d_profile_list)
             csi_d_profile_array_max = np.max(csi_d_profile_array, axis=1, keepdims=True)
             csi_d_profile_array = csi_d_profile_array/csi_d_profile_array_max
             csi_d_profile_array[csi_d_profile_array < mt.pow(10, noise_lev)] = mt.pow(10, noise_lev)
 
-            with open(path_doppler_name, "wb") as fp:  # Pickling
+            with open(path_doppler_name, "wb") as fp:  
                 pickle.dump(csi_d_profile_array, fp)
+            
+            file_elapsed = time.time() - file_start
+            print(f"  • Output shape: {csi_d_profile_array.shape}")
+            print(f"✓ Saved to: {path_doppler_name}")
+            print(f"  • Time elapsed: {file_elapsed:.2f}s")
+    
+    print("\n" + "#"*60)
+    print("#  DOPPLER COMPUTATION COMPLETED")
+    print("#"*60 + "\n")
