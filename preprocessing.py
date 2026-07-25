@@ -8,7 +8,7 @@ import time
 
 REMOVE_20_DEFAULT = [0, 1, 2, 3, 32, 61, 62, 63]
 REMOVE_80A = [*range(6), *range(127, 131), *range(251, 256)]
-REMOVE_80B = [*range(6), 32, *range(59, 70), 96, *range(123, 134), 160, *range(186, 198), 224, *range(251, 256)]
+REMOVE_80B = [*range(6), 32, *range(59, 70), 96, *range(123, 134), 160, *range(187, 198), 224, *range(251, 256)]
 
 def process_subcarriers(folder, output_folder):
     mat_files = glob.glob(os.path.join(folder, '*.mat'))
@@ -77,26 +77,6 @@ def linear_phase_transformation(csi_phase):
     calibrated_phase = unwrapped_phase - (epsilon_s * m_matrix) - tau_s
     return calibrated_phase
 
-def remove_amplitude_outliers(csi_complex, window=5, seuil=3.5):
-    """
-    Filtre de Hampel : détecte/corrige les paquets aberrants (sauts d'AGC,
-    glitches) sur l'amplitude, sous-porteuse par sous-porteuse.
-    """
-    amplitude = np.abs(csi_complex)
-    phase = np.angle(csi_complex)
-    
-    mediane = median_filter(amplitude, size=(window, 1), mode='nearest')
-    mad = median_filter(np.abs(amplitude - mediane), size=(window, 1), mode='nearest') + 1e-9
-    
-    aberrants = np.abs(amplitude - mediane) > seuil * 1.4826 * mad
-    amplitude_corrigee = np.where(aberrants, mediane, amplitude)
-    
-    touches = np.sum(aberrants, axis=1) > 0.3 * amplitude.shape[1]
-    if touches.any():
-        print(f"  • {touches.sum()} paquet(s) aberrant(s) corrigé(s) (AGC/glitch probable)")
-    
-    return amplitude_corrigee * np.exp(1j * phase)
-
 def tsfr_then_complex_to_amplitude_phase(file_name):
     start_time = time.time()
     print(f"\n{'='*60}")
@@ -105,12 +85,12 @@ def tsfr_then_complex_to_amplitude_phase(file_name):
     
     data = sio.loadmat(file_name)
     csi = data['CSI']
-    # csi = remove_amplitude_outliers(csi)
     print(f"  • Input shape: {csi.shape}")
     print(f"  • Data type: {csi.dtype}")
     
     # Extraction de l'amplitude et de la phase
     csi_amplitude = np.abs(csi)
+    csi_amplitude = csi_amplitude / np.mean(csi_amplitude, axis=1, keepdims=True)
     csi_phase = np.angle(csi)
     
     # Remplacement du detrend temporel par la transformation linéaire
