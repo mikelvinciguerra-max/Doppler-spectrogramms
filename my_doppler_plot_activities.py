@@ -76,11 +76,11 @@ def parse_ehunam_filename(filename):
         
     return f"{title_line1}\n{title_line2}"
 
-def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out_dir, custom_title):
+# NOUVEAU PARAMÈTRE 'Tc' AJOUTÉ A LA FONCTION
+def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out_dir, custom_title, Tc):
     """Plot Doppler spectrograms directly without splitting"""
     
     # Physical parameters
-    Tc = 6e-3
     fc = 5e9
     v_light = 3e8
     delta_v = round(v_light / (Tc * fc * feature_length), 3)
@@ -94,7 +94,9 @@ def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out
     axe_vitesses = (np.arange(feature_length) - feature_length / 2) * delta_v
     
     # Plot the spectrogram
-    plt.figure(figsize=(12, 7)) # Hauteur légèrement augmentée pour le titre sur 2 lignes
+    plt.figure(figsize=(12, 7)) 
+    
+    # CORRECTION DU vmin INTÉGRÉE ICI
     mesh = plt.pcolormesh(axe_temps, axe_vitesses, stft_sliced.T, cmap='viridis',
                           shading='auto', vmin=np.min(stft_sliced), vmax=0.0)
     
@@ -117,6 +119,8 @@ if __name__ == '__main__':
     parser.add_argument('sliding', help='Sliding step size (e.g., 32)', type=int)
     parser.add_argument('start_plt', help='Start index for plotting (e.g., 0)', type=int)
     parser.add_argument('end_plt', help='End index for plotting (e.g., 256)', type=int)
+    # NOUVEL ARGUMENT AJOUTÉ ICI
+    parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
 
     args = parser.parse_args()
 
@@ -138,6 +142,7 @@ if __name__ == '__main__':
     print("#"*60)
     print(f"\n[Found] {len(fichiers_txt)} file(s)")
     print(f"[Output] Directory: {args.out_dir}")
+    print(f"[Parameters] FFT size: {args.feature_length}, Sliding: {args.sliding}, Tc: {args.tc}s")
     print("-"*60)
 
     # Processing loop
@@ -158,10 +163,10 @@ if __name__ == '__main__':
         # 1. Extraction des métadonnées du nom du fichier
         dynamic_title = parse_ehunam_filename(file_name)
 
-        # 2. Passage du titre à la fonction de tracé
+        # 2. Passage du titre à la fonction de tracé ET DE L'ARGUMENT TC
         plt_obj, axe_temps, axe_vitesses, stft_sliced = plot_spectrograms(
             stft_log, args.feature_length, args.sliding, 
-            args.start_plt, args.end_plt, args.out_dir, dynamic_title
+            args.start_plt, args.end_plt, args.out_dir, dynamic_title, args.tc
         )
         
         # Save plot

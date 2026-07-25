@@ -24,12 +24,17 @@ if __name__ == '__main__':
                                             '(default 80)', default=80, required=False, type=int)
     parser.add_argument('--sub_band', help='Sub_band idx in [1, 2, 3, 4] for 20 MHz, [1, 2] for 40 MHz '
                                            '(default 1)', default=1, required=False, type=int)
+    # NOUVEAUX ARGUMENTS AJOUTÉS ICI
+    parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
+    parser.add_argument('--fft', help='Number of FFT values (default 100)', default=100, required=False, type=int)
+    
     args = parser.parse_args()
 
     num_symbols = args.sample_length  # 51
     middle = int(mt.floor(num_symbols / 2))
 
-    Tc = 6e-3
+    # UTILISATION DE LA VARIABLE TC DYNAMIQUE
+    Tc = args.tc
     fc = 5e9
     v_light = 3e8
     delta_v = round(v_light / (Tc * fc * num_symbols), 3)
@@ -61,7 +66,7 @@ if __name__ == '__main__':
         print(f"\n[Input] Directory: {exp_dir}")
         print(f"[Found] {len(names)} files to process")
         print(f"[Output] Directory: {path_doppler}")
-        print(f"[Parameters] Bandwidth: {bandwidth} MHz, Sample length: {args.sample_length}, Sliding: {sliding}, Noise level: {noise_lev} dB")
+        print(f"[Parameters] BW: {bandwidth} MHz, Samples: {args.sample_length}, Sliding: {sliding}, Noise: {noise_lev} dB, Tc: {Tc}s, FFT: {args.fft}")
         print("-"*60)
 
         for name in names:
@@ -92,7 +97,9 @@ if __name__ == '__main__':
 
                 hann_window = np.expand_dims(hann(num_symbols), axis=-1)
                 csi_matrix_wind = np.multiply(csi_matrix_cut, hann_window)
-                csi_doppler_prof = fft(csi_matrix_wind, n=100, axis=0)
+                
+                # UTILISATION DE LA TAILLE FFT DYNAMIQUE ICI
+                csi_doppler_prof = fft(csi_matrix_wind, n=args.fft, axis=0)
                 csi_doppler_prof = fftshift(csi_doppler_prof, axes=0)
 
                 csi_d_map = np.abs(csi_doppler_prof * np.conj(csi_doppler_prof))
