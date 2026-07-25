@@ -80,9 +80,6 @@ if __name__ == '__main__':
 
             csi_matrix_processed = csi_matrix_processed[args.start:args.end, :, :]
             print(f"  • Sliced shape: {csi_matrix_processed.shape}")
-
-            csi_matrix_processed[:, :, 0] = csi_matrix_processed[:, :, 0] / np.mean(csi_matrix_processed[:, :, 0],
-                                                                                    axis=1,  keepdims=True)
             
             csi_matrix_complete = csi_matrix_processed[:, :, 0]*np.exp(1j*csi_matrix_processed[:, :, 1])
 

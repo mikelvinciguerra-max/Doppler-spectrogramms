@@ -96,7 +96,7 @@ def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out
     # Plot the spectrogram
     plt.figure(figsize=(12, 7)) # Hauteur légèrement augmentée pour le titre sur 2 lignes
     mesh = plt.pcolormesh(axe_temps, axe_vitesses, stft_sliced.T, cmap='viridis',
-                          shading='auto', vmin=-12.0, vmax=0.0)
+                          shading='auto', vmin=np.min(stft_sliced), vmax=0.0)
     
     plt.ylim(-4.5, 4.5)
     plt.gca().xaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
