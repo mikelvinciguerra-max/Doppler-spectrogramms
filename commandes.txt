@@ -4,3 +4,6 @@ python3 my_doppler_computation.py data/ "" doppler_output 0 100 10 1 -2.5
 
 python3 my_doppler_computation.py data_preprocessed "" doppler_output 0 2000000 128 32 -40
 python3 my_doppler_plot_activities.py doppler_output plots 100 32 0 2000000
+
+python3 my_doppler_computation.py data_preprocessed/ "" doppler_output 0 2000000 51 14 -0.5
+python3 my_doppler_plot_activities.py doppler_output plots 100 14 0 2000000
