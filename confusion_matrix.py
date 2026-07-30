@@ -52,7 +52,7 @@ def plot_confusion_matrices(confusion_matrices, env_names, train_env, num_classe
 
     plt.suptitle(f"Confusion matrices — model trained on {train_env}", fontsize=13, y=1.02)
     plt.tight_layout()
-    plt.savefig("confusion_matrices.png", dpi=150, bbox_inches='tight')
+    plt.savefig("matrix/confusion_matrices.png", dpi=150, bbox_inches='tight')
     plt.close()
     print("Saved -> confusion_matrices.png")
 
