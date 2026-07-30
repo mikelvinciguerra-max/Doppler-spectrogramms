@@ -69,7 +69,7 @@ if __name__ == "__main__" :
 
     ROOT_DIR     = "/media/mikel/Elements/MikelVinciguerra/dataset_PC_ehunam/"     
     TRAIN_ENV    = args.train_env                            
-    ENV_NAMES    = ["doppler_output01", "doppler_output02", "doppler_output04", "doppler_output05", "doppler_output06"] 
+    ENV_NAMES    = ["01", "02", "04", "05", "06"] 
     NUM_CLASSES  = 5
     BATCH_SIZE   = 64
     EPOCHS       = 20

@@ -33,7 +33,7 @@ def plot_accuracy_matrix(accuracy_matrix, env_names, train_env):
                 vmin=0, vmax=1, ax=ax)
     ax.set_title(f"Cross-environment accuracy — trained on {train_env}")
     plt.tight_layout()
-    plt.savefig("accuracy_matrix.png", dpi=150)
+    plt.savefig("matrix/accuracy_matrix.png", dpi=150)
     plt.close()
     print("Saved -> accuracy_matrix.png")
 
