@@ -5,6 +5,7 @@ import scipy.io as sio
 from scipy.ndimage import median_filter
 import os
 import time
+import argparse
 
 REMOVE_20_DEFAULT = [0, 1, 2, 3, 32, 61, 62, 63]
 REMOVE_80A = [*range(6), *range(127, 131), *range(251, 256)]
@@ -13,7 +14,7 @@ REMOVE_80B = [*range(6), 32, *range(59, 70), 96, *range(123, 134), 160, *range(1
 def process_subcarriers(folder, output_folder):
     mat_files = glob.glob(os.path.join(folder, '*.mat'))
     if not mat_files:
-        print('No .mat files found.')
+        print(f'No .mat files found in "{folder}".')
         return
 
     for file_path in mat_files:
@@ -77,13 +78,15 @@ def linear_phase_transformation(csi_phase):
     calibrated_phase = unwrapped_phase - (epsilon_s * m_matrix) - tau_s
     return calibrated_phase
 
-def tsfr_then_complex_to_amplitude_phase(file_name):
+
+def tsfr_then_complex_to_amplitude_phase(file_path, output_folder):
     start_time = time.time()
+    file_name = os.path.basename(file_path)
     print(f"\n{'='*60}")
-    print(f"Linear Phase Transform + Amplitude-Phase: {os.path.basename(file_name)}")
+    print(f"Linear Phase Transform + Amplitude-Phase: {file_name}")
     print(f"{'='*60}")
     
-    data = sio.loadmat(file_name)
+    data = sio.loadmat(file_path)
     csi = data['CSI']
     print(f"  • Input shape: {csi.shape}")
     print(f"  • Data type: {csi.dtype}")
@@ -105,7 +108,9 @@ def tsfr_then_complex_to_amplitude_phase(file_name):
     
     csi_output = np.stack((csi_a, csi_p), axis=-1)
     data['CSI'] = csi_output
-    output_path = "./data_preprocessed/"+os.path.basename(file_name)
+    
+    os.makedirs(output_folder, exist_ok=True)
+    output_path = os.path.join(output_folder, file_name)
     sio.savemat(output_path, data)
     
     elapsed = time.time() - start_time
@@ -159,34 +164,51 @@ def process_and_save_csi_mean_subtraction(data, var_name, file_path, overwrite=F
 
 
 if __name__ == "__main__":
+    # --- Configuration des arguments en ligne de commande ---
+    parser = argparse.ArgumentParser(description="Pipeline de prétraitement des fichiers CSI (EHUNAM).")
+    parser.add_argument(
+        "input_folder", 
+        type=str, 
+        help="Chemin vers le dossier contenant les fichiers .mat bruts"
+    )
+    parser.add_argument(
+        "output_folder", 
+        type=str, 
+        help="Chemin vers le dossier de sortie pour les fichiers traités"
+    )
+    
+    args = parser.parse_args()
+    
     total_start = time.time()
     
     print("\n" + "#"*60)
     print("#  PREPROCESSING PIPELINE START")
+    print(f"#  Input folder  : {args.input_folder}")
+    print(f"#  Output folder : {args.output_folder}")
     print("#"*60)
 
-    # Phase 1 : Subcarrier Removal
-    input_folder = "data_ehunam"
-    output_folder = "data_preprocessed"
+    input_folder = args.input_folder
+    output_folder = args.output_folder
+    
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
         
+    # Phase 1 : Subcarrier Removal
     print(f"\n[Phase 1/3][Subcarrier Removal] Processing files from '{input_folder}'...")
     process_subcarriers(input_folder, output_folder)
     
     # Phase 2: Linear Phase Sanitization + Amplitude-Phase 
-    folder = "data_preprocessed"
-    files = [f for f in os.listdir(folder) if f.endswith(".mat")]
-    print(f"\n[Phase 2/3][Phase Transform + Amplitude-Phase] Processing {len(files)} files from '{folder}'...")
+    files = [f for f in os.listdir(output_folder) if f.endswith(".mat")]
+    print(f"\n[Phase 2/3][Phase Transform + Amplitude-Phase] Processing {len(files)} files from '{output_folder}'...")
     for file in files:
-        file_path = os.path.join(folder, file)
-        tsfr_then_complex_to_amplitude_phase(file_path)
+        file_path = os.path.join(output_folder, file)
+        tsfr_then_complex_to_amplitude_phase(file_path, output_folder)
 
     # Phase 3: Mean Subtraction
-    files = [f for f in os.listdir(folder) if f.endswith(".mat")]
-    print(f"\n[Phase 3/3][Mean Subtraction] Processing {len(files)} files from '{folder}'...")
+    files = [f for f in os.listdir(output_folder) if f.endswith(".mat")]
+    print(f"\n[Phase 3/3][Mean Subtraction] Processing {len(files)} files from '{output_folder}'...")
     for file in files:
-        file_path = os.path.join(folder, file)
+        file_path = os.path.join(output_folder, file)
         data = sio.loadmat(file_path)
         process_and_save_csi_mean_subtraction(data, var_name='CSI', file_path=file_path, overwrite=True)
     
