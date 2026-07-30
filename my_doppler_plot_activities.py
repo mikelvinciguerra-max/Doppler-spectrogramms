@@ -96,7 +96,6 @@ def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out
     # Plot the spectrogram
     plt.figure(figsize=(12, 7)) 
     
-    # CORRECTION DU vmin INTÉGRÉE ICI
     mesh = plt.pcolormesh(axe_temps, axe_vitesses, stft_sliced.T, cmap='viridis',
                           shading='auto', vmin=np.min(stft_sliced), vmax=0.0)
     
