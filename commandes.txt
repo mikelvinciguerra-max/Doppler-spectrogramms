@@ -7,3 +7,6 @@ python3 my_doppler_plot_activities.py doppler_output plots 100 32 0 2000000
 
 python3 my_doppler_computation.py data_preprocessed/ "" doppler_output 0 2000000 51 14 -0.5
 python3 my_doppler_plot_activities.py doppler_output plots 100 14 0 2000000
+
+ python3 my_doppler_computation.py "data_preprocessed/" "" "doppler_output/" 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024 
+ 
