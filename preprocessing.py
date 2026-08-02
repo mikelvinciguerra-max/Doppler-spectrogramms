@@ -57,17 +57,15 @@ def process_subcarriers(folder, output_folder):
 
 def linear_phase_transformation(csi_phase):
     """
-    Applique une transformation linéaire pour atténuer le décalage temporel
-    (offset mismatches/CFO/SFO) comme décrit dans l'article.
+    Apply a linear transformation to mitigate temporal offset (offset mismatches/CFO/SFO) as described in the article.
     """
     unwrapped_phase = np.unwrap(csi_phase, axis=1)
     K = unwrapped_phase.shape[1]
-    
-    # Indices centrés : évite le biais -epsilon_s*(K-1)/2 par paquet
+
+    # Centred indices: avoids bias -epsilon_s*(K-1)/2 per packet
     m = np.arange(K) - (K - 1) / 2
-    
-    # Pente par régression sur TOUTES les sous-porteuses (robuste au bruit
-    # ponctuel), au lieu de seulement les 2 extrémités
+
+    # Regression slope on all subcarriers (robust to impulsive noise), instead of just the 2 ends
     epsilon_s = (unwrapped_phase @ m) / (m @ m)
     tau_s = np.mean(unwrapped_phase, axis=1)
     
@@ -91,15 +89,15 @@ def tsfr_then_complex_to_amplitude_phase(file_path, output_folder):
     print(f"  • Input shape: {csi.shape}")
     print(f"  • Data type: {csi.dtype}")
     
-    # Extraction de l'amplitude et de la phase
+    # Extraction of amplitude and phase
     csi_amplitude = np.abs(csi)
     csi_amplitude = csi_amplitude / np.mean(csi_amplitude, axis=1, keepdims=True)
     csi_phase = np.angle(csi)
     
-    # Remplacement du detrend temporel par la transformation linéaire
+    # Remplacement of temporal detrend by linear transformation
     csi_phase_calibrated = linear_phase_transformation(csi_phase)
     
-    # Reconstitution du signal complexe avec la phase assainie
+    # Reconstitution of the complex signal with the calibrated phase
     csi_processed = csi_amplitude * np.exp(1j * csi_phase_calibrated)
     
     # Conversion finale en format Amplitude/Phase
@@ -164,17 +162,16 @@ def process_and_save_csi_mean_subtraction(data, var_name, file_path, overwrite=F
 
 
 if __name__ == "__main__":
-    # --- Configuration des arguments en ligne de commande ---
-    parser = argparse.ArgumentParser(description="Pipeline de prétraitement des fichiers CSI (EHUNAM).")
+    parser = argparse.ArgumentParser(description=" Preprocessing pipeline for CSI files (EHUNAM).")
     parser.add_argument(
         "input_folder", 
         type=str, 
-        help="Chemin vers le dossier contenant les fichiers .mat bruts"
+        help="Path to the folder containing the raw .mat files"
     )
     parser.add_argument(
         "output_folder", 
         type=str, 
-        help="Chemin vers le dossier de sortie pour les fichiers traités"
+        help="Path to the output folder for the processed files"
     )
     
     args = parser.parse_args()
