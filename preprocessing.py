@@ -94,13 +94,13 @@ def tsfr_then_complex_to_amplitude_phase(file_path, output_folder):
     csi_amplitude = csi_amplitude / np.mean(csi_amplitude, axis=1, keepdims=True)
     csi_phase = np.angle(csi)
     
-    # Remplacement of temporal detrend by linear transformation
+    # Replacement of temporal detrend by linear transformation
     csi_phase_calibrated = linear_phase_transformation(csi_phase)
     
     # Reconstitution of the complex signal with the calibrated phase
     csi_processed = csi_amplitude * np.exp(1j * csi_phase_calibrated)
     
-    # Conversion finale en format Amplitude/Phase
+    # Final conversion to Amplitude/Phase format
     csi_a = np.abs(csi_processed).astype(np.float32)
     csi_p = np.angle(csi_processed).astype(np.float32)
     
