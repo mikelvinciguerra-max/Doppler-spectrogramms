@@ -24,7 +24,7 @@ if __name__ == '__main__':
                                             '(default 80)', default=80, required=False, type=int)
     parser.add_argument('--sub_band', help='Sub_band idx in [1, 2, 3, 4] for 20 MHz, [1, 2] for 40 MHz '
                                            '(default 1)', default=1, required=False, type=int)
-    # NOUVEAUX ARGUMENTS AJOUTÉS ICI
+    # New arguments added here
     parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
     parser.add_argument('--fft', help='Number of FFT values (default 100)', default=100, required=False, type=int)
     
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     num_symbols = args.sample_length  # 51
     middle = int(mt.floor(num_symbols / 2))
 
-    # UTILISATION DE LA VARIABLE TC DYNAMIQUE
+    # Use the dynamic Tc variable
     Tc = args.tc
     fc = 5e9
     v_light = 3e8
@@ -98,7 +98,7 @@ if __name__ == '__main__':
                 hann_window = np.expand_dims(hann(num_symbols), axis=-1)
                 csi_matrix_wind = np.multiply(csi_matrix_cut, hann_window)
                 
-                # UTILISATION DE LA TAILLE FFT DYNAMIQUE ICI
+                # Use the dynamic FFT size here
                 csi_doppler_prof = fft(csi_matrix_wind, n=args.fft, axis=0)
                 csi_doppler_prof = fftshift(csi_doppler_prof, axes=0)
 

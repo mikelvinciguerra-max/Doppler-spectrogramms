@@ -63,7 +63,7 @@ def train(train_loader, valid_loader, epochs, model, criterion, metric, optimize
 
 
 if __name__ == "__main__" :
-    parser = argparse.ArgumentParser(description="Entraînement CNN sur les profils Doppler")
+    parser = argparse.ArgumentParser(description="Training CNN on Doppler profiles")
     parser.add_argument("--train_env", type=str, default="doppler_output01", help="Folder name of the training environment")
     args = parser.parse_args()
 
