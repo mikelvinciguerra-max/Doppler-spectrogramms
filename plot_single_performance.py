@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,10 +10,6 @@ from torch.utils.data import DataLoader
 from model import CNN
 from dataset import DopplerDataset
 
-# ------------------------------------------------------------------ #
-#  CONFIG                                                            #
-# ------------------------------------------------------------------ #
-MODEL_PATH = "model_doppler.pth"
 BATCH_SIZE = 64
 
 def get_accuracy(model, loader, device):
@@ -76,6 +73,11 @@ def plot_single_performance_matrix(matrix_data, test_env_names, train_env_name):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluating CNN on Doppler profiles")
+    parser.add_argument("--env", type=str, default="a", help="Folder name of the training environment")
+    args = parser.parse_args()
+    
+    MODEL_PATH = f"models/model_doppler_{args.env}.pth"
     assert os.path.exists(MODEL_PATH), f"Model not found: {MODEL_PATH}"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,7 +104,7 @@ if __name__ == "__main__":
     print("\nEvaluating on all environments...")
     
     for i, test_env in enumerate(env_names):
-        env_dir = os.path.join(root_dir, test_env)
+        env_dir = os.path.join(root_dir, "doppler_output_" + test_env)
         
         if not os.path.isdir(env_dir):
             print(f"[!] Directory not found: {env_dir} - Skipping.")

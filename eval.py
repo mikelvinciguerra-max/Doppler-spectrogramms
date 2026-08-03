@@ -1,3 +1,4 @@
+import argparse
 import os
 import torch
 from torch.utils.data import DataLoader
@@ -8,7 +9,6 @@ import seaborn as sns
 from model import CNN
 from dataset import DopplerDataset
 
-MODEL_PATH = "model_doppler.pth"
 BATCH_SIZE = 64
 
 def evaluate_accuracy(model, loader, device):
@@ -38,6 +38,12 @@ def plot_accuracy_matrix(accuracy_matrix, env_names, train_env):
     print("Saved -> accuracy_matrix.png")
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Evaluating CNN on Doppler profiles")
+    parser.add_argument("--env", type=str, default="a", help="Folder name of the training environment")
+    args = parser.parse_args()
+    
+    MODEL_PATH = f"models/model_doppler_{args.env}.pth"
     assert os.path.exists(MODEL_PATH), f"Model not found: {MODEL_PATH}"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,7 +68,7 @@ if __name__ == "__main__":
     print(f"{'='*50}")
 
     for env_name in test_envs:
-        env_dir = os.path.join(root_dir, env_name)
+        env_dir = os.path.join(root_dir, "doppler_output_" + env_name)
         test_dataset = DopplerDataset(env_dir)
         test_loader  = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 

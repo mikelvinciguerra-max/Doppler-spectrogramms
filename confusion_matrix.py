@@ -1,3 +1,4 @@
+import argparse
 import os
 import torch
 from torch.utils.data import DataLoader
@@ -9,7 +10,6 @@ from sklearn.metrics import confusion_matrix
 from model import CNN
 from dataset import DopplerDataset
 
-MODEL_PATH = "model_doppler.pth"
 BATCH_SIZE = 64
 
 def get_predictions(model, loader, device):
@@ -57,6 +57,13 @@ def plot_confusion_matrices(confusion_matrices, env_names, train_env, num_classe
     print("Saved -> confusion_matrices.png")
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Evaluating CNN on Doppler profiles")
+    parser.add_argument("--env", type=str, default="a", help="Folder name of the training environment")
+    args = parser.parse_args()
+
+
+    MODEL_PATH = f"models/model_doppler_{args.env[-1]}.pth"
     assert os.path.exists(MODEL_PATH), f"Model not found: {MODEL_PATH}"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -78,7 +85,7 @@ if __name__ == "__main__":
     print(f"\nGenerating Confusion Matrices (Trained on: {train_env})...")
     
     for env_name in test_envs:
-        env_dir = os.path.join(root_dir, env_name)
+        env_dir = os.path.join(root_dir, "doppler_output_" + env_name)
         test_dataset = DopplerDataset(env_dir)
         test_loader  = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
