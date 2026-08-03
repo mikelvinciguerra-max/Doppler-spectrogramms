@@ -65,6 +65,7 @@ def train(train_loader, valid_loader, epochs, model, criterion, metric, optimize
 if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description="Training CNN on Doppler profiles")
     parser.add_argument("--train_env", type=str, default="doppler_output_a", help="Folder name of the training environment")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     args = parser.parse_args()
 
     ROOT_DIR     = "/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/"     
@@ -72,7 +73,7 @@ if __name__ == "__main__" :
     ENV_NAMES    = ["a", "b", "c", "d"] 
     NUM_CLASSES  = 5
     BATCH_SIZE   = 64
-    EPOCHS       = 20
+    EPOCHS       = args.epochs
     LR           = 1e-3
 
     env_dirs = [os.path.join(ROOT_DIR, e) for e in ENV_NAMES]
@@ -120,7 +121,8 @@ if __name__ == "__main__" :
         'train_env': TRAIN_ENV,
         'env_names': ENV_NAMES,
         'num_classes': NUM_CLASSES,
-        'root_dir': ROOT_DIR
+        'root_dir': ROOT_DIR,
+        'epochs': EPOCHS
     }
-    torch.save(checkpoint, f"models/model_doppler_{TRAIN_ENV[-1]}.pth")
-    print(f"Model saved -> models/model_doppler_{TRAIN_ENV[-1]}.pth")
+    torch.save(checkpoint, f"models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")
+    print(f"Model saved -> models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")

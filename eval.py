@@ -22,7 +22,7 @@ def evaluate_accuracy(model, loader, device):
             total += y.size(0)
     return correct / total if total > 0 else 0.0
 
-def plot_accuracy_matrix(accuracy_matrix, env_names, train_env):
+def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs):
     test_envs = [e for e in env_names if e != train_env]
     data      = np.array([[accuracy_matrix[e] for e in test_envs]])
 
@@ -33,9 +33,9 @@ def plot_accuracy_matrix(accuracy_matrix, env_names, train_env):
                 vmin=0, vmax=1, ax=ax)
     ax.set_title(f"Cross-environment accuracy — trained on {train_env}")
     plt.tight_layout()
-    plt.savefig("matrix/accuracy_matrix.png", dpi=150)
+    plt.savefig(f"matrix/accuracy_matrix_{train_env}_epochs_{epochs}.png", dpi=150)
     plt.close()
-    print("Saved -> accuracy_matrix.png")
+    print(f"Saved -> accuracy_matrix_{train_env}_epochs_{epochs}.png")
 
 if __name__ == "__main__":
 
@@ -43,8 +43,11 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="a", help="Folder name of the training environment")
     args = parser.parse_args()
     
-    MODEL_PATH = f"models/model_doppler_{args.env}.pth"
-    assert os.path.exists(MODEL_PATH), f"Model not found: {MODEL_PATH}"
+    MODEL_PATH = f"models/model_doppler_{args.env[-1]}_epochs_*.pth"
+    matching_models = [m for m in os.listdir("models") if m.startswith(f"model_doppler_{args.env[-1]}_") and m.endswith('.pth')]
+    if not matching_models:
+        raise FileNotFoundError(f"No model found for env {args.env[-1]}")
+    MODEL_PATH = os.path.join("models", matching_models[0])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint  = torch.load(MODEL_PATH, map_location=device, weights_only=False)
@@ -81,4 +84,4 @@ if __name__ == "__main__":
     for env_name in test_envs:
         print(f"{env_name:<20} {accuracy_matrix[env_name]:>10.4f}")
 
-    plot_accuracy_matrix(accuracy_matrix, env_names, train_env)
+    plot_accuracy_matrix(accuracy_matrix, env_names, train_env, checkpoint.get('epochs', 'unknown'))
