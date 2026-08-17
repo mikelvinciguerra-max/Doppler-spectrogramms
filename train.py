@@ -77,10 +77,6 @@ if __name__ == "__main__" :
     EPOCHS       = args.epochs
     LR           = 1e-3
 
-    env_dirs = [os.path.join(ROOT_DIR, e) for e in ENV_NAMES]
-    for d in env_dirs:
-        assert os.path.isdir(d), f"Folder not found: {d}"
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 

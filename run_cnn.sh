@@ -1,7 +1,8 @@
 #!/bin/bash
 
 TRAIN_ENV=doppler_output_a
-EPOCHS=${2:-40}
+EPOCHS=$1
+ROOTDIR=$2
 
 echo "EPOCHS set to: $EPOCHS"
 
@@ -10,19 +11,14 @@ echo "Starting of the pipeline : training on $TRAIN_ENV"
 echo "========================================================"
 
 echo ""
-echo "[1/3] Training phase..."
+echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS"
+python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR"
 
 echo ""
-echo "[2/3] Global evaluation..."
+echo "[2/2] Global evaluation..."
 echo "--------------------------------------------------------"
-# python3 eval.py --env "$TRAIN_ENV"
-
-echo ""
-echo "[3/3] Detailed analysis..."
-echo "--------------------------------------------------------"
-# python3 confusion_matrix.py --env "$TRAIN_ENV"
+python3 eval.py --env "$TRAIN_ENV"
 
 echo ""
 echo "Pipeline terminated successfully for $TRAIN_ENV !"
@@ -37,19 +33,14 @@ echo "Starting of the pipeline : training on $TRAIN_ENV"
 echo "========================================================"
 
 echo ""
-echo "[1/3] Training phase..."
+echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS"
+python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR"
 
 echo ""
-echo "[2/3] Global evaluation..."
+echo "[2/2] Global evaluation..."
 echo "--------------------------------------------------------"
-# python3 eval.py --env "$TRAIN_ENV"
-
-echo ""
-echo "[3/3] Detailed analysis..."
-echo "--------------------------------------------------------"
-# python3 confusion_matrix.py --env "$TRAIN_ENV"
+python3 eval.py --env "$TRAIN_ENV"
 
 echo ""
 echo "Pipeline terminated successfully for $TRAIN_ENV !"
@@ -64,19 +55,14 @@ echo "Starting of the pipeline : training on $TRAIN_ENV"
 echo "========================================================"
 
 echo ""
-echo "[1/3] Training phase..."
+echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS"
+python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR"
 
 echo ""
-echo "[2/3] Global evaluation..."
+echo "[2/2] Global evaluation..."
 echo "--------------------------------------------------------"
-# python3 eval.py --env "$TRAIN_ENV"
-
-echo ""
-echo "[3/3] Detailed analysis..."
-echo "--------------------------------------------------------"
-# python3 confusion_matrix.py --env "$TRAIN_ENV"
+python3 eval.py --env "$TRAIN_ENV"
 
 echo ""
 echo "Pipeline terminated successfully for $TRAIN_ENV !"
@@ -91,19 +77,14 @@ echo "Starting of the pipeline : training on $TRAIN_ENV"
 echo "========================================================"
 
 echo ""
-echo "[1/3] Training phase..."
+echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS"
+python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR"
 
 echo ""
-echo "[2/3] Global evaluation..."
+echo "[2/2] Global evaluation..."
 echo "--------------------------------------------------------"
-# python3 eval.py --env "$TRAIN_ENV"
-
-echo ""
-echo "[3/3] Detailed analysis..."
-echo "--------------------------------------------------------"
-# python3 confusion_matrix.py --env "$TRAIN_ENV"
+python3 eval.py --env "$TRAIN_ENV"
 
 echo ""
 echo "Pipeline terminated successfully for $TRAIN_ENV !"
