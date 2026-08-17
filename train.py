@@ -66,9 +66,10 @@ if __name__ == "__main__" :
     parser = argparse.ArgumentParser(description="Training CNN on Doppler profiles")
     parser.add_argument("--train_env", type=str, default="doppler_output_a", help="Folder name of the training environment")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
+    parser.add_argument("--root_dir", type=str, default="/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/" , help="Root dir")
     args = parser.parse_args()
 
-    ROOT_DIR     = "/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/"     
+    ROOT_DIR     = args.root_dir    
     TRAIN_ENV    = args.train_env                            
     ENV_NAMES    = ["a", "b", "c", "d"] 
     NUM_CLASSES  = 5
