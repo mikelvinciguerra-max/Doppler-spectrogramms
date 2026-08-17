@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TRAIN_ENV=doppler_output_a
-EPOCHS=${2:-5}
+EPOCHS=${2:-40}
 
 echo "EPOCHS set to: $EPOCHS"
 
