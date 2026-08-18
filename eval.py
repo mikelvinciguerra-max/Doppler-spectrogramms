@@ -23,6 +23,7 @@ def evaluate_accuracy(model, loader, device):
     return correct / total if total > 0 else 0.0
 
 def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs):
+    print("EPOCHS : ", epochs)
     test_envs = [e for e in env_names if e != train_env]
     data      = np.array([[accuracy_matrix[e] for e in test_envs]])
 
@@ -40,14 +41,19 @@ def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Evaluating CNN on Doppler profiles")
-    parser.add_argument("--env", type=str, default="a", help="Folder name of the training environment")
+    parser.add_argument("--env", type=str, default="a", help="Environment letter used during training")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of epochs used to train the model")
     args = parser.parse_args()
-    
-    MODEL_PATH = f"models/model_doppler_{args.env[-1]}_epochs_*.pth"
-    matching_models = [m for m in os.listdir("models") if m.startswith(f"model_doppler_{args.env[-1]}_") and m.endswith('.pth')]
-    if not matching_models:
-        raise FileNotFoundError(f"No model found for env {args.env[-1]}")
-    MODEL_PATH = os.path.join("models", matching_models[0])
+
+    env_name = args.env.split("_")[-1] if "_" in args.env else args.env
+    model_filename = f"model_doppler_{env_name}_epochs_{args.epochs}.pth"
+    MODEL_PATH = os.path.join("models", model_filename)
+
+    if not os.path.exists(MODEL_PATH):
+        matching_models = [m for m in os.listdir("models") if m.startswith(f"model_doppler_{env_name}_") and m.endswith('.pth')]
+        if not matching_models:
+            raise FileNotFoundError(f"No model found for env {env_name}")
+        raise FileNotFoundError(f"No model found for env {env_name} at {args.epochs} epochs. Available: {matching_models}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint  = torch.load(MODEL_PATH, map_location=device, weights_only=False)
