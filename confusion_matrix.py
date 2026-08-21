@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
@@ -54,19 +55,26 @@ def plot_full_matrix(matrix, env_names, epochs):
     print(f"\nFull matrix saved -> {save_path}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Cross-environment evaluation matrix")
+    parser.add_argument("--epochs", type=int, default=40, help="Number of epochs used to train the models")
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # 1. Load an initial model just to extract global metadata (env_names, root_dir)[cite: 11]
-    matching_initial_models = [m for m in os.listdir("models") if m.startswith("model_doppler_a_") and m.endswith('.pth')]
-    if not matching_initial_models:
-        raise FileNotFoundError("No model found for environment a")
-    INITIAL_MODEL_PATH = os.path.join("models", matching_initial_models[0])
-    
+    # 1. Load an initial model just to extract global metadata (env_names, root_dir)
+    model_prefix = f"model_doppler_a_epochs_{args.epochs}.pth"
+    INITIAL_MODEL_PATH = os.path.join("models", model_prefix)
+    if not os.path.exists(INITIAL_MODEL_PATH):
+        matching_initial_models = [m for m in os.listdir("models") if m.startswith("model_doppler_a_") and m.endswith('.pth')]
+        if not matching_initial_models:
+            raise FileNotFoundError("No model found for environment a")
+        raise FileNotFoundError(f"No model found for environment a at {args.epochs} epochs. Available: {matching_initial_models}")
+
     checkpoint = torch.load(INITIAL_MODEL_PATH, map_location=device, weights_only=False)
     env_names = checkpoint['env_names']
     num_classes = checkpoint['num_classes']
     root_dir = checkpoint['root_dir']
-    epochs = checkpoint.get('epochs', 'unknown')
+    epochs = checkpoint.get('epochs', args.epochs)
     
     n_envs = len(env_names)
     
@@ -77,11 +85,12 @@ if __name__ == "__main__":
 
     # 2. Loop over columns (Training environments)
     for j, train_env in enumerate(env_names):
-        matching_models = [m for m in os.listdir("models") if m.startswith(f"model_doppler_{train_env[-1]}_") and m.endswith('.pth')]
-        if not matching_models:
-            print(f"Missing model ignored for env {train_env}")
+        expected_model = f"model_doppler_{train_env[-1]}_epochs_{args.epochs}.pth"
+        model_path = os.path.join("models", expected_model)
+        if not os.path.exists(model_path):
+            matching_models = [m for m in os.listdir("models") if m.startswith(f"model_doppler_{train_env[-1]}_") and m.endswith('.pth')]
+            print(f"Missing model ignored for env {train_env} at {args.epochs} epochs. Available: {matching_models}")
             continue
-        model_path = os.path.join("models", matching_models[0])
             
         print(f"\n--- Evaluating model trained on: {train_env} ---")
         
