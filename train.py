@@ -119,7 +119,8 @@ if __name__ == "__main__" :
         'env_names': ENV_NAMES,
         'num_classes': NUM_CLASSES,
         'root_dir': ROOT_DIR,
-        'epochs': EPOCHS
+        'epochs': EPOCHS,
+        'test_indices': test_set.indices
     }
     torch.save(checkpoint, f"models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")
     print(f"Model saved -> models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")
