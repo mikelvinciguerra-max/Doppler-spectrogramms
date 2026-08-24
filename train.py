@@ -3,7 +3,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset ### MODIFIED LINE: Added Subset ###
 
 from dataset import DopplerDataset
 from model import CNN
@@ -67,6 +67,7 @@ if __name__ == "__main__" :
     parser.add_argument("--train_env", type=str, default="doppler_output_a", help="Folder name of the training environment")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument("--root_dir", type=str, default="/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/" , help="Root dir")
+    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes to train on") 
     args = parser.parse_args()
 
     ROOT_DIR     = args.root_dir    
@@ -75,7 +76,8 @@ if __name__ == "__main__" :
     NUM_CLASSES  = 5
     BATCH_SIZE   = 64
     EPOCHS       = args.epochs
-    LR           = 1e-3
+    LR           = 1e-4
+    TARGET_CLASSES = sorted(args.classes) 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -83,18 +85,27 @@ if __name__ == "__main__" :
     dataset_path = os.path.join(ROOT_DIR, TRAIN_ENV)
     dataset = DopplerDataset(dataset_path)
 
-    n       = len(dataset)
+    print(f"Filtering dataset to train only on classes: {TARGET_CLASSES}")
+    filtered_indices = []
+    for i in range(len(dataset)):
+        _, label = dataset[i]
+        if label in TARGET_CLASSES:
+            filtered_indices.append(i)
+            
+    filtered_dataset = Subset(dataset, filtered_indices)
+    n = len(filtered_dataset)
+
     n_train = int(n * 0.65)
     n_valid = int(n * 0.175)
     n_test  = n - n_train - n_valid
 
-    train_set, valid_set, test_set = random_split(dataset, [n_train, n_valid, n_test])
+    train_set, valid_set, test_set = random_split(filtered_dataset, [n_train, n_valid, n_test])
 
     train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,  num_workers=0, pin_memory=True)
     valid_loader = DataLoader(valid_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
     test_loader  = DataLoader(test_set,  batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
-    model     = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
+    model = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
     
     dummy = torch.zeros(1, 1, 32, 32).to(device)
     model(dummy)
@@ -113,14 +124,19 @@ if __name__ == "__main__" :
             test_score += metric(model(x), y)
     print(f"\nFinal test score: {test_score / len(test_loader):.4f}")
 
+    classes_str = "-".join(map(str, TARGET_CLASSES))
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'train_env': TRAIN_ENV,
         'env_names': ENV_NAMES,
         'num_classes': NUM_CLASSES,
+        'target_classes': TARGET_CLASSES,
         'root_dir': ROOT_DIR,
         'epochs': EPOCHS,
         'test_indices': test_set.indices
     }
-    torch.save(checkpoint, f"models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")
-    print(f"Model saved -> models/model_doppler_{TRAIN_ENV[-1]}_epochs_{EPOCHS}.pth")
+    
+    os.makedirs("models", exist_ok=True)
+    model_filename = f"models/model_doppler_{TRAIN_ENV[-1]}_classes_{classes_str}_epochs_{EPOCHS}.pth"
+    torch.save(checkpoint, model_filename)
+    print(f"Model saved -> {model_filename}")
