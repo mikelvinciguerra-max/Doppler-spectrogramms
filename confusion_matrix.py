@@ -45,17 +45,19 @@ def plot_full_matrix(matrix, env_names, epochs, target_classes):
     """
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # Using the 'Blues' palette to match your reference image
-    sns.heatmap(matrix, annot=True, fmt=".2f", cmap="Blues",
+    # Convert accuracies (0-1) to percentages (0-100) for display
+    matrix_pct = matrix * 100
+    # Using the 'Blues' palette and percent scale
+    sns.heatmap(matrix_pct, annot=True, fmt=".1f", cmap="Blues",
                 xticklabels=env_names,
                 yticklabels=env_names,
-                vmin=0, vmax=1, ax=ax)
+                vmin=0, vmax=100, ax=ax)
     
     # Formatting axes according to the 'Test / Train' format of your image
     ax.set_xlabel("Train")
     ax.set_ylabel("Test")
     classes_str = "-".join(map(str, sorted(target_classes)))
-    ax.set_title(f"Intra and Inter-Scenario Performance Matrix (Classes {classes_str})")
+    ax.set_title(f"Intra and Inter-Scenario Performance Matrix (Classes {classes_str}) — percent")
     
     # Move the X-axis labels to the top to match the image style
     ax.xaxis.tick_top()
