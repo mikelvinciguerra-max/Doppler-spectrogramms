@@ -22,7 +22,7 @@ def evaluate_accuracy(model, loader, device):
             total += y.size(0)
     return correct / total if total > 0 else 0.0
 
-def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs):
+def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs, k_folds=None):
     print("EPOCHS : ", epochs)
     test_envs = [e for e in env_names if e != train_env]
     data      = np.array([[accuracy_matrix[e] for e in test_envs]])
@@ -34,9 +34,10 @@ def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs):
                 vmin=0, vmax=1, ax=ax)
     ax.set_title(f"Cross-environment accuracy — trained on {train_env}")
     plt.tight_layout()
-    plt.savefig(f"matrix/accuracy_matrix_{train_env}_epochs_{epochs}.png", dpi=150)
+    kfold_suffix = f"_kfolds_{k_folds}" if k_folds is not None else ""
+    plt.savefig(f"matrix/accuracy_matrix_{train_env}_epochs_{epochs}{kfold_suffix}.png", dpi=150)
     plt.close()
-    print(f"Saved -> accuracy_matrix_{train_env}_epochs_{epochs}.png")
+    print(f"Saved -> accuracy_matrix_{train_env}_epochs_{epochs}{kfold_suffix}.png")
 
 if __name__ == "__main__":
 
@@ -44,11 +45,15 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="a", help="Environment letter used during training")
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs used to train the model")
     parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes used to train the model")
+    parser.add_argument("--k-folds", type=int, default=None, help="Number of CV folds used during training")
     args = parser.parse_args()
 
     env_name = args.env.split("_")[-1] if "_" in args.env else args.env
     classes_str = "-".join(map(str, sorted(args.classes)))
-    model_filename = f"model_doppler_{env_name}_classes_{classes_str}_epochs_{args.epochs}.pth"
+    model_filename = f"model_doppler_{env_name}_classes_{classes_str}_epochs_{args.epochs}"
+    if args.k_folds is not None:
+        model_filename += f"_kfolds_{args.k_folds}"
+    model_filename += ".pth"
     MODEL_PATH = os.path.join("models", model_filename)
 
     if not os.path.exists(MODEL_PATH):
@@ -67,6 +72,7 @@ if __name__ == "__main__":
     env_names   = checkpoint['env_names']
     num_classes = checkpoint['num_classes']
     root_dir    = checkpoint['root_dir']
+    k_folds = checkpoint.get('k_folds', args.k_folds)
 
     model = CNN(input_channels=1, num_classes=num_classes).to(device)
     dummy = torch.zeros(1, 1, 32, 32).to(device)
@@ -95,4 +101,4 @@ if __name__ == "__main__":
     for env_name in test_envs:
         print(f"{env_name:<20} {accuracy_matrix[env_name]:>10.4f}")
 
-    plot_accuracy_matrix(accuracy_matrix, env_names, train_env, checkpoint.get('epochs', 'unknown'))
+    plot_accuracy_matrix(accuracy_matrix, env_names, train_env, checkpoint.get('epochs', 'unknown'), k_folds)

@@ -38,26 +38,22 @@ def evaluate_accuracy(model, loader, device, target_classes=None):
             total += y.size(0)
     return correct / total if total > 0 else 0.0
 
-def plot_full_matrix(matrix, env_names, epochs, target_classes):
+def plot_full_matrix(matrix, env_names, epochs, target_classes, k_folds=None):
     """
     Displays and saves the cross-correlation matrix.
     Rows are test environments, columns are training environments.
     """
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # Convert accuracies (0-1) to percentages (0-100) for display
-    matrix_pct = matrix * 100
-    # Using the 'Blues' palette and percent scale
-    sns.heatmap(matrix_pct, annot=True, fmt=".1f", cmap="Blues",
+    sns.heatmap(matrix, annot=True, fmt=".2f", cmap="Blues",
                 xticklabels=env_names,
                 yticklabels=env_names,
-                vmin=0, vmax=100, ax=ax)
+                vmin=0, vmax=1, ax=ax)
     
-    # Formatting axes according to the 'Test / Train' format of your image
     ax.set_xlabel("Train")
     ax.set_ylabel("Test")
     classes_str = "-".join(map(str, sorted(target_classes)))
-    ax.set_title(f"Intra and Inter-Scenario Performance Matrix (Classes {classes_str}) — percent")
+    ax.set_title(f"Intra and Inter-Scenario Performance Matrix (Classes {classes_str})")
     
     # Move the X-axis labels to the top to match the image style
     ax.xaxis.tick_top()
@@ -68,15 +64,23 @@ def plot_full_matrix(matrix, env_names, epochs, target_classes):
     # Create the matrix folder if it doesn't exist
     os.makedirs("matrix", exist_ok=True)
     classes_str = "-".join(map(str, sorted(target_classes)))
-    save_path = f"matrix/full_cross_env_accuracy_classes_{classes_str}_epochs_{epochs}.png"
+    kfold_suffix = f"_kfolds_{k_folds}" if k_folds is not None else ""
+    save_path = f"matrix/full_cross_env_accuracy_classes_{classes_str}_epochs_{epochs}{kfold_suffix}.png"
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"\nFull matrix saved -> {save_path}")
+
+
+def build_model_filename(train_env, classes_str, epochs, k_folds=None):
+    kfold_suffix = f"_kfolds_{k_folds}" if k_folds is not None else ""
+    return f"model_doppler_{train_env}_classes_{classes_str}_epochs_{epochs}{kfold_suffix}.pth"
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cross-environment evaluation matrix")
     parser.add_argument("--epochs", type=int, default=40, help="Number of epochs used to train the models")
     parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes used to train the models")
+    parser.add_argument("--k-folds", type=int, default=None, help="Number of CV folds used during training")
     args = parser.parse_args()
     target_classes = sorted(args.classes)
 
@@ -84,12 +88,14 @@ if __name__ == "__main__":
     classes_str = "-".join(map(str, target_classes))
 
     # 1. Load an initial model just to extract global metadata (env_names, root_dir)
-    model_prefix = f"model_doppler_a_classes_{classes_str}_epochs_{args.epochs}.pth"
+    model_prefix = build_model_filename("a", classes_str, args.epochs, args.k_folds)
     INITIAL_MODEL_PATH = os.path.join("models", model_prefix)
     if not os.path.exists(INITIAL_MODEL_PATH):
         matching_initial_models = [
             m for m in os.listdir("models")
-            if m.startswith("model_doppler_a_classes_") and m.endswith(f"_epochs_{args.epochs}.pth")
+            if m.startswith("model_doppler_a_classes_")
+            and m.endswith(f"_epochs_{args.epochs}.pth")
+            and (args.k_folds is None or f"_kfolds_{args.k_folds}.pth" in m or "_kfolds_" not in m)
         ]
         if not matching_initial_models:
             raise FileNotFoundError(f"No model found for environment a with classes {sorted(args.classes)}")
@@ -100,6 +106,7 @@ if __name__ == "__main__":
     num_classes = checkpoint['num_classes']
     root_dir = checkpoint['root_dir']
     epochs = checkpoint.get('epochs', args.epochs)
+    k_folds = checkpoint.get('k_folds', args.k_folds)
     if 'target_classes' in checkpoint:
         target_classes = sorted(checkpoint['target_classes'])
     print(f"Using target classes: {target_classes}")
@@ -113,12 +120,13 @@ if __name__ == "__main__":
 
     # 2. Loop over columns (Training environments)
     for j, train_env in enumerate(env_names):
-        expected_model = f"model_doppler_{train_env[-1]}_classes_{classes_str}_epochs_{args.epochs}.pth"
+        expected_model = build_model_filename(train_env[-1], classes_str, args.epochs, k_folds)
         model_path = os.path.join("models", expected_model)
         if not os.path.exists(model_path):
             matching_models = [
                 m for m in os.listdir("models")
-                if m.startswith(f"model_doppler_{train_env[-1]}_classes_{classes_str}_") and m.endswith(f"_epochs_{args.epochs}.pth")
+                if m.startswith(f"model_doppler_{train_env[-1]}_classes_{classes_str}_")
+                and m.endswith(f"_epochs_{args.epochs}.pth")
             ]
             print(f"Missing model ignored for env {train_env} at {args.epochs} epochs with classes {sorted(args.classes)}. Available: {matching_models}")
             continue
@@ -134,6 +142,8 @@ if __name__ == "__main__":
         model.load_state_dict(model_checkpoint['model_state_dict'])
         model.eval()
 
+        test_indices = model_checkpoint.get('test_indices')
+
         # 3. Loop over rows (Test environments)
         for i, test_env in enumerate(env_names):
             env_dir = os.path.join(root_dir, "doppler_output_" + test_env)
@@ -143,7 +153,14 @@ if __name__ == "__main__":
                 continue
 
             test_dataset = DopplerDataset(env_dir)
-            filtered_test_dataset = filter_dataset_by_classes(test_dataset, target_classes)
+            
+            # Same environment as training: restrict to the held-out test split, otherwise
+            # this diagonal cell reuses samples seen during training/validation.
+            if i == j and test_indices is not None:
+                filtered_test_dataset = Subset(test_dataset, test_indices)
+            else:
+                filtered_test_dataset = filter_dataset_by_classes(test_dataset, target_classes)
+
             test_loader = DataLoader(filtered_test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
             # Accuracy calculation[cite: 11]
@@ -154,4 +171,4 @@ if __name__ == "__main__":
             print(f"  -> Test on {test_env:<15} : {acc:.4f}")
 
     # 4. Generate the matrix image
-    plot_full_matrix(accuracy_matrix, env_names, epochs, target_classes)
+    plot_full_matrix(accuracy_matrix, env_names, epochs, target_classes, k_folds)

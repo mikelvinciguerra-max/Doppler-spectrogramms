@@ -50,6 +50,7 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
     num_classes = checkpoint['num_classes']
     root_dir = checkpoint['root_dir']
     epochs = checkpoint.get('epochs', 'unknown')
+    k_folds = checkpoint.get('k_folds', 'unknown')
 
     if 'target_classes' in checkpoint:
         target_classes = sorted(checkpoint['target_classes'])
@@ -96,19 +97,17 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
         raise RuntimeError(f"No test samples found for target classes {target_classes}")
 
     cm = confusion_matrix(all_labels, all_preds, labels=labels, normalize='true')
-    cm_pct = cm * 100
     print(f"Classes displayed: {list(zip(labels, display_labels))}")
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm_pct, display_labels=display_labels)
-    disp.plot(cmap=plt.cm.Blues, ax=ax, values_format='.1f')
-    # Force color scaling to 0-100 (percent)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
+    disp.plot(cmap=plt.cm.Blues, ax=ax, values_format='.2f')
     try:
-        ax.images[0].set_clim(0, 100)
+        ax.images[0].set_clim(0, 1)
     except Exception:
         pass
 
-    plt.title(f"Confusion Matrix (percent) — trained on {train_env} ({epochs} epochs)")
+    plt.title(f"Confusion Matrix — trained on {train_env} ({epochs} epochs, {k_folds}-fold CV)")
     plt.xlabel('Predicted')
     plt.ylabel('True')
 
@@ -118,17 +117,18 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
         test_labels = [str(env).split('_')[-1] for env in eval_envs]
         test_label = '-'.join(test_labels)
         class_suffix = get_filename_class_suffix(target_classes)
-        save_path = os.path.join('matrix/classes/', f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}.png")
+        kfold_suffix = f"_kfolds_{k_folds}" if k_folds != 'unknown' else ''
+        save_path = os.path.join('matrix/classes/', f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}{kfold_suffix}.png")
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
         print(f"Saved confusion matrix -> {save_path}")
     else:
         plt.show()
 
-    return cm_pct
+    return cm
 
 
-def find_checkpoint_for_train(train_env, model_dir='models', classes=None, epochs=None):
+def find_checkpoint_for_train(train_env, model_dir='models', classes=None, epochs=None, k_folds=None):
     """Find a checkpoint file for a given train_env letter (e.g. 'a')."""
     import glob
     train_letter = train_env.split('_')[-1] if '_' in train_env else train_env
@@ -141,7 +141,9 @@ def find_checkpoint_for_train(train_env, model_dir='models', classes=None, epoch
     if classes_str:
         candidates = [c for c in candidates if f"classes_{classes_str}_" in os.path.basename(c) or f"classes_{classes_str}.pth" in os.path.basename(c)]
     if epochs is not None:
-        candidates = [c for c in candidates if f"_epochs_{epochs}.pth" in os.path.basename(c)]
+        candidates = [c for c in candidates if f"_epochs_{epochs}" in os.path.basename(c)]
+    if k_folds is not None:
+        candidates = [c for c in candidates if f"_kfolds_{k_folds}.pth" in os.path.basename(c)]
 
     if not candidates:
         raise FileNotFoundError(f"No checkpoint found for train env '{train_env}' in {model_dir}. Searched pattern: {pattern}")
@@ -160,6 +162,7 @@ def main():
     parser.add_argument('--test-envs', nargs='+', help="One or more test environment identifiers (letters like 'b c')")
     parser.add_argument('--model-dir', default='models', help='Directory where checkpoints are stored')
     parser.add_argument('--epochs', type=int, help='Filter model by epoch count if desired')
+    parser.add_argument('--k-folds', type=int, help='Filter model by k-fold count if desired')
     parser.add_argument('--classes', nargs='+', type=int, help='Target classes to consider (overrides checkpoint if provided)')
     parser.add_argument('--batch-size', type=int, default=BATCH_SIZE)
     args = parser.parse_args()
@@ -167,7 +170,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Locate checkpoint automatically
-    model_path = find_checkpoint_for_train(args.train_env, model_dir=args.model_dir, classes=args.classes, epochs=args.epochs)
+    model_path = find_checkpoint_for_train(args.train_env, model_dir=args.model_dir, classes=args.classes, epochs=args.epochs, k_folds=args.k_folds)
     print(f"Using checkpoint: {model_path}")
 
     # Load checkpoint to check env names and root dir

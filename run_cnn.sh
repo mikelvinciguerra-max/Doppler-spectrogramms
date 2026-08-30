@@ -2,14 +2,16 @@
 
 TRAIN_ENV=doppler_output_a
 EPOCHS=$1
-ROOTDIR=$2
-CLASSES=${*:3}
+KFOLDS=$2
+ROOTDIR=$3
+CLASSES=${*:4}
 
 if [ -z "$CLASSES" ]; then
     CLASSES="0 1 2 3 4"
 fi
 
 echo "EPOCHS set to: $EPOCHS"
+echo "KFOLDS set to: $KFOLDS"
 echo "CLASSES set to: $CLASSES"
 
 echo "========================================================"
@@ -19,7 +21,7 @@ echo "========================================================"
 echo ""
 echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR" --classes $CLASSES
+time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --k_folds "$KFOLDS" --root_dir "$ROOTDIR" --classes $CLASSES
 
 # echo ""
 # echo "[2/2] Global evaluation..."
@@ -41,7 +43,7 @@ echo "========================================================"
 echo ""
 echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR" --classes $CLASSES
+time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --k_folds "$KFOLDS" --root_dir "$ROOTDIR" --classes $CLASSES
 
 # echo ""
 # echo "[2/2] Global evaluation..."
@@ -63,7 +65,7 @@ echo "========================================================"
 echo ""
 echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR" --classes $CLASSES
+time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --k_folds "$KFOLDS" --root_dir "$ROOTDIR" --classes $CLASSES
 
 # echo ""
 # echo "[2/2] Global evaluation..."
@@ -85,7 +87,7 @@ echo "========================================================"
 echo ""
 echo "[1/2] Training phase..."
 echo "--------------------------------------------------------"
-time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --root_dir "$ROOTDIR" --classes $CLASSES
+time python3 train.py --train_env "$TRAIN_ENV" --epochs "$EPOCHS" --k_folds "$KFOLDS" --root_dir "$ROOTDIR" --classes $CLASSES
 
 
 # echo ""
@@ -97,4 +99,4 @@ echo ""
 echo "Pipeline terminated successfully for $TRAIN_ENV !"
 echo "========================================================"
 
-time python3 confusion_matrix.py --epochs "$EPOCHS" --classes $CLASSES
+time python3 confusion_matrix.py --epochs "$EPOCHS" --k_folds "$KFOLDS" --classes $CLASSES

@@ -31,7 +31,7 @@ class CNN(nn.Module):
             nn.Mish(),
 
             nn.Linear(in_features=128, out_features=num_classes),
-            nn.Softmax(dim=1)
+            # nn.Softmax(dim=1)
         )
 
     def forward(self, x):
