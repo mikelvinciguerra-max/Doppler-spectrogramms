@@ -7,9 +7,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from model import CNN
-from dataset import DopplerDataset
+from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
+
+
+def normalize_target_classes(classes):
+    if classes is None:
+        return []
+    return sorted({int(cls) for cls in classes if 0 <= int(cls) <= 4})
+
 
 def filter_dataset_by_classes(dataset, target_classes):
     target_classes = set(target_classes)
@@ -24,9 +31,10 @@ def evaluate_accuracy(model, loader, device, target_classes=None):
     model.eval()
     correct, total = 0, 0
     target_set = set(target_classes) if target_classes is not None else None
+    label_to_index = {int(label): index for index, label in enumerate(target_classes)} if target_classes is not None else None
     with torch.no_grad():
         for x, y in loader:
-            x, y = x.to(device), y.to(device)
+            x = x.to(device)
             preds = torch.argmax(model(x), dim=1)
             if target_set is not None:
                 mask = torch.tensor([label.item() in target_set for label in y], device=device)
@@ -34,6 +42,7 @@ def evaluate_accuracy(model, loader, device, target_classes=None):
                     continue
                 y = y[mask]
                 preds = preds[mask]
+                y = torch.tensor([label_to_index[int(label)] for label in y], dtype=torch.long, device=device)
             correct += (preds == y).sum().item()
             total += y.size(0)
     return correct / total if total > 0 else 0.0
@@ -79,10 +88,10 @@ def build_model_filename(train_env, classes_str, epochs, k_folds=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cross-environment evaluation matrix")
     parser.add_argument("--epochs", type=int, default=40, help="Number of epochs used to train the models")
-    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes used to train the models")
-    parser.add_argument("--k-folds", type=int, default=None, help="Number of CV folds used during training")
+    parser.add_argument("--classes", nargs='+', type=int, default=[1, 2, 3, 4], help="Classes used to train the models (class 0 is not used)")
+    parser.add_argument("--k-folds", type=int, default=1, help="Number of CV folds used during training")
     args = parser.parse_args()
-    target_classes = sorted(args.classes)
+    target_classes = normalize_target_classes(args.classes)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     classes_str = "-".join(map(str, target_classes))
@@ -97,9 +106,23 @@ if __name__ == "__main__":
             and m.endswith(f"_epochs_{args.epochs}.pth")
             and (args.k_folds is None or f"_kfolds_{args.k_folds}.pth" in m or "_kfolds_" not in m)
         ]
-        if not matching_initial_models:
-            raise FileNotFoundError(f"No model found for environment a with classes {sorted(args.classes)}")
-        raise FileNotFoundError(f"No model found for environment a at {args.epochs} epochs with classes {sorted(args.classes)}. Available: {matching_initial_models}")
+        normalized_candidates = [
+            m for m in matching_initial_models
+            if classes_str and f"classes_{classes_str}_" in m
+        ]
+        if not normalized_candidates and classes_str:
+            legacy_candidates = [
+                m for m in matching_initial_models
+                if f"classes_{'-'.join(map(str, sorted({int(cls) for cls in args.classes})))}_" in m
+            ]
+            if legacy_candidates:
+                INITIAL_MODEL_PATH = os.path.join("models", legacy_candidates[0])
+            else:
+                raise FileNotFoundError(f"No model found for environment a at {args.epochs} epochs with classes {target_classes}. Available: {matching_initial_models}")
+        elif not matching_initial_models:
+            raise FileNotFoundError(f"No model found for environment a with classes {target_classes}")
+        else:
+            INITIAL_MODEL_PATH = os.path.join("models", normalized_candidates[0])
 
     checkpoint = torch.load(INITIAL_MODEL_PATH, map_location=device, weights_only=False)
     env_names = checkpoint['env_names']
@@ -152,7 +175,7 @@ if __name__ == "__main__":
             if not os.path.exists(env_dir):
                 continue
 
-            test_dataset = DopplerDataset(env_dir)
+            test_dataset = load_dataset_with_cache(env_dir)
             
             # Same environment as training: restrict to the held-out test split, otherwise
             # this diagonal cell reuses samples seen during training/validation.
