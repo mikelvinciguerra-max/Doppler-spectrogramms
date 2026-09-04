@@ -26,7 +26,7 @@ if __name__ == '__main__':
                                            '(default 1)', default=1, required=False, type=int)
     # New arguments added here
     parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
-    parser.add_argument('--fft', help='Number of FFT values (default 100)', default=100, required=False, type=int)
+    parser.add_argument('--fft', help='Number of FFT values (default 1024)', default=1024, required=False, type=int)
     
     args = parser.parse_args()
 
