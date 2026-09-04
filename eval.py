@@ -1,13 +1,13 @@
 import argparse
 import os
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from model import CNN
-from dataset import DopplerDataset
+from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
 
@@ -21,6 +21,24 @@ def evaluate_accuracy(model, loader, device):
             correct += (preds == y).sum().item()
             total += y.size(0)
     return correct / total if total > 0 else 0.0
+
+
+class MappedDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, target_classes):
+        self.base_dataset = base_dataset
+        self.target_classes = set(target_classes)
+        self.label_to_index = {label: index for index, label in enumerate(target_classes)}
+        self.indices = [
+            index for index in range(len(base_dataset))
+            if int(base_dataset[index][1].item()) in self.target_classes
+        ]
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        x, y = self.base_dataset[self.indices[index]]
+        return x, torch.tensor(self.label_to_index[int(y.item())], dtype=torch.long)
 
 def plot_accuracy_matrix(accuracy_matrix, env_names, train_env, epochs, k_folds=None):
     print("EPOCHS : ", epochs)
@@ -44,12 +62,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluating CNN on Doppler profiles")
     parser.add_argument("--env", type=str, default="a", help="Environment letter used during training")
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs used to train the model")
-    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes used to train the model")
+    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes used to train the model (class 0 means no person)")
     parser.add_argument("--k-folds", type=int, default=None, help="Number of CV folds used during training")
     args = parser.parse_args()
 
     env_name = args.env.split("_")[-1] if "_" in args.env else args.env
-    classes_str = "-".join(map(str, sorted(args.classes)))
+    classes = sorted({cls for cls in args.classes if 0 <= cls <= 4})
+    classes_str = "-".join(map(str, classes))
     model_filename = f"model_doppler_{env_name}_classes_{classes_str}_epochs_{args.epochs}"
     if args.k_folds is not None:
         model_filename += f"_kfolds_{args.k_folds}"
@@ -73,6 +92,7 @@ if __name__ == "__main__":
     num_classes = checkpoint['num_classes']
     root_dir    = checkpoint['root_dir']
     k_folds = checkpoint.get('k_folds', args.k_folds)
+    target_classes = sorted(checkpoint.get('target_classes', classes))
 
     model = CNN(input_channels=1, num_classes=num_classes).to(device)
     dummy = torch.zeros(1, 1, 32, 32).to(device)
@@ -89,7 +109,8 @@ if __name__ == "__main__":
 
     for env_name in test_envs:
         env_dir = os.path.join(root_dir, "doppler_output_" + env_name)
-        test_dataset = DopplerDataset(env_dir)
+        test_dataset = load_dataset_with_cache(env_dir)
+        test_dataset = MappedDataset(test_dataset, target_classes)
         test_loader  = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         acc = evaluate_accuracy(model, test_loader, device)
