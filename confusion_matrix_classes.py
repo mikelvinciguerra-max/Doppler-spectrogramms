@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from model import CNN
-from dataset import DopplerDataset
+from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
 
@@ -80,7 +80,7 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
             print(f"[!] Test folder not found, skipping: {env_dir}")
             continue
 
-        dataset = DopplerDataset(env_dir)
+        dataset = load_dataset_with_cache(env_dir)
         filtered = filter_dataset_by_classes(dataset, target_classes)
         loader = DataLoader(filtered, batch_size=batch_size, shuffle=False)
 
@@ -91,12 +91,17 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(y.numpy())
 
-    labels = target_classes
-    display_labels = get_display_labels(labels)
+    labels = list(range(len(target_classes)))
+    display_labels = [CLASS_NAME_BY_INDEX.get(target_classes[i], f'Class {target_classes[i]}') for i in labels]
     if not all_labels:
         raise RuntimeError(f"No test samples found for target classes {target_classes}")
 
-    cm = confusion_matrix(all_labels, all_preds, labels=labels, normalize='true')
+    mapped_labels = [int(label) for label in all_labels]
+    mapped_preds = [int(pred) for pred in all_preds]
+    label_to_index = {int(cls): idx for idx, cls in enumerate(target_classes)}
+    mapped_labels = [label_to_index[int(label)] for label in mapped_labels]
+
+    cm = confusion_matrix(mapped_labels, mapped_preds, labels=labels, normalize='true')
     print(f"Classes displayed: {list(zip(labels, display_labels))}")
 
     fig, ax = plt.subplots(figsize=(8, 6))
