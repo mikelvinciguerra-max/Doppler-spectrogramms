@@ -1,4 +1,5 @@
 import argparse
+import gc
 import os
 import torch
 import torch.nn as nn
@@ -7,13 +8,31 @@ from torch.utils.data import DataLoader, Subset
 import numpy as np
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
-from dataset import DopplerDataset
+from dataset import load_dataset_with_cache
 from model import CNN
+
 
 def metric(pred, target):
     pred_classes = torch.argmax(pred, dim=1)
     correct = (pred_classes == target) 
     return correct.sum().item() / len(target)
+
+
+class MappedDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, indices, label_to_index):
+        self.base_dataset = base_dataset
+        self.indices = list(indices)
+        self.label_to_index = label_to_index
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        sample_idx = self.indices[idx]
+        x, y = self.base_dataset[sample_idx]
+        label = int(y.item())
+        return x, torch.tensor(self.label_to_index[label], dtype=torch.long)
+
 
 def train(train_loader, valid_loader, epochs, model, criterion, metric, optimizer, device):
     len_train = len(train_loader)
@@ -74,25 +93,31 @@ if __name__ == "__main__" :
     parser.add_argument("--train_env", type=str, default="doppler_output_a", help="Folder name of the training environment")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument("--root_dir", type=str, default="/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/" , help="Root dir")
-    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes to train on") 
-    parser.add_argument("--k_folds", type=int, default=5, help="Number of stratified CV folds for the robustness check")
+    parser.add_argument("--classes", nargs='+', type=int, default=[1, 2, 3, 4], help="Classes to train on (class 0 is not used)") 
+    parser.add_argument("--k-folds", type=int, default=1, help="Number of stratified CV folds for the robustness check")
     args = parser.parse_args()
 
     ROOT_DIR     = args.root_dir    
     TRAIN_ENV    = args.train_env                            
     ENV_NAMES    = ["a", "b", "c", "d"] 
-    NUM_CLASSES  = 5
+    VALID_CLASSES = [0, 1, 2, 3, 4]
     BATCH_SIZE   = 64
     EPOCHS       = args.epochs
     LR           = 1e-4
-    TARGET_CLASSES = sorted(args.classes) 
+    TARGET_CLASSES = sorted({cls for cls in args.classes if cls in VALID_CLASSES})
     K_FOLDS      = args.k_folds
+    if K_FOLDS < 1:
+        parser.error("--k_folds must be at least 1")
+    if not TARGET_CLASSES:
+        parser.error("--classes must contain at least one class between 0 and 4")
+    NUM_CLASSES = len(TARGET_CLASSES)
+    LABEL_TO_INDEX = {label: idx for idx, label in enumerate(TARGET_CLASSES)}
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     dataset_path = os.path.join(ROOT_DIR, TRAIN_ENV)
-    dataset = DopplerDataset(dataset_path)
+    dataset = load_dataset_with_cache(dataset_path)
 
     print(f"Filtering dataset to train only on classes: {TARGET_CLASSES}")
 
@@ -102,54 +127,67 @@ if __name__ == "__main__" :
         _, label = dataset[i]
         if label in TARGET_CLASSES:
             filtered_indices.append(i)
-            filtered_labels.append(label)
+            filtered_labels.append(int(label))
 
     # Class weights (inverse frequency) to compensate for imbalance without discarding data
     unique_classes, class_counts = np.unique(filtered_labels, return_counts=True)
-    print(f"Class counts: {dict(zip(unique_classes.tolist(), class_counts.tolist()))}")
+    print(f"Class counts: {dict(zip(unique_classes.tolist(), [int(c) for c in class_counts.tolist()]))}")
     total = class_counts.sum()
     weights = np.ones(NUM_CLASSES, dtype=np.float32)
-    for cls, count in zip(unique_classes, class_counts):
-        weights[cls] = total / (len(unique_classes) * count)
+    for cls_idx, count in zip(unique_classes, class_counts):
+        weights[LABEL_TO_INDEX[int(cls_idx)]] = total / (len(unique_classes) * count)
     class_weights = torch.tensor(weights, device=device)
     print(f"Class weights: {weights}")
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = nn.CrossEntropyLoss()
+
 
     # Held-out test set (17.5%): untouched by the cross-validation below and by the final
     # fit, so confusion_matrix.py can evaluate it as genuinely unseen data.
     train_valid_idx, test_idx, y_train_valid, y_test = train_test_split(
-        filtered_indices, filtered_labels, 
+        filtered_indices, filtered_labels,
         test_size=0.175, stratify=filtered_labels, random_state=42
     )
-    test_set = Subset(dataset, test_idx)
+    test_set = MappedDataset(dataset, test_idx, LABEL_TO_INDEX)
     test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
     # Stratified K-Fold on the remaining 82.5%: gives a fold-averaged validation score
     # instead of relying on a single train/valid split that can be lucky or unlucky.
     train_valid_idx = np.array(train_valid_idx)
     y_train_valid = np.array(y_train_valid)
-    skf = StratifiedKFold(n_splits=K_FOLDS, shuffle=True, random_state=42)
-
-    print(f"\nRunning {K_FOLDS}-fold stratified cross-validation on {len(train_valid_idx)} samples...")
     fold_scores = []
 
-    for fold, (fold_train_pos, fold_valid_pos) in enumerate(skf.split(train_valid_idx, y_train_valid)):
-        print(f"\n=== Fold {fold + 1}/{K_FOLDS} ===")
+    if K_FOLDS == 1:
+        print(f"\nSkipping cross-validation; normal training on {len(train_valid_idx)} samples...")
+    else:
+        skf = StratifiedKFold(n_splits=K_FOLDS, shuffle=True, random_state=42)
+        print(f"\nRunning {K_FOLDS}-fold stratified cross-validation on {len(train_valid_idx)} samples...")
 
-        fold_train_loader = DataLoader(Subset(dataset, train_valid_idx[fold_train_pos]), batch_size=BATCH_SIZE, shuffle=True,  num_workers=0, pin_memory=True)
-        fold_valid_loader = DataLoader(Subset(dataset, train_valid_idx[fold_valid_pos]), batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
+        for fold, (fold_train_pos, fold_valid_pos) in enumerate(skf.split(train_valid_idx, y_train_valid)):
+            print(f"\n=== Fold {fold + 1}/{K_FOLDS} ===")
 
-        fold_model = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
-        dummy = torch.zeros(1, 1, 32, 32).to(device)
-        fold_model(dummy)
+            fold_train_dataset = MappedDataset(dataset, train_valid_idx[fold_train_pos], LABEL_TO_INDEX)
+            fold_valid_dataset = MappedDataset(dataset, train_valid_idx[fold_valid_pos], LABEL_TO_INDEX)
+            fold_train_loader = DataLoader(fold_train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
+            fold_valid_loader = DataLoader(fold_valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
-        fold_optimizer = optim.Adam(fold_model.parameters(), lr=LR)
-        fold_history = train(fold_train_loader, fold_valid_loader, EPOCHS, fold_model,
-                              criterion, metric, fold_optimizer, device)
-        fold_scores.append(fold_history['val_score'][-1])
+            fold_model = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
+            dummy = torch.zeros(1, 1, 32, 32).to(device)
+            fold_model(dummy)
+
+            fold_optimizer = optim.Adam(fold_model.parameters(), lr=LR)
+            fold_history = train(fold_train_loader, fold_valid_loader, EPOCHS, fold_model,
+                                  criterion, metric, fold_optimizer, device)
+            fold_scores.append(fold_history['val_score'][-1])
+
+            del fold_train_loader, fold_valid_loader, fold_model, fold_history
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     fold_scores = np.array(fold_scores)
-    print(f"\nCV val_score: {fold_scores.mean():.4f} +/- {fold_scores.std():.4f} (per fold: {[f'{s:.4f}' for s in fold_scores]})")
+    if fold_scores.size:
+        print(f"\nCV val_score: {fold_scores.mean():.4f} +/- {fold_scores.std():.4f} (per fold: {[f'{s:.4f}' for s in fold_scores]})")
 
     # Final model: fit on the whole train+valid pool (all folds combined, no internal
     # validation split) using the hyperparameters just validated above. This is the model
@@ -157,7 +195,8 @@ if __name__ == "__main__" :
     # diagnostic step, not the deployed model.
     print(f"\nFitting final model on the full train+valid pool ({len(train_valid_idx)} samples)...")
 
-    final_train_loader = DataLoader(Subset(dataset, train_valid_idx), batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
+    final_train_dataset = MappedDataset(dataset, train_valid_idx, LABEL_TO_INDEX)
+    final_train_loader = DataLoader(final_train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
 
     model = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
     dummy = torch.zeros(1, 1, 32, 32).to(device)
@@ -168,6 +207,11 @@ if __name__ == "__main__" :
 
     history = train(final_train_loader, None, EPOCHS, model, criterion, metric, optimizer, device)
 
+    del final_train_loader
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     model.eval()
     test_score = 0.0
     with torch.no_grad():
@@ -175,6 +219,11 @@ if __name__ == "__main__" :
             x, y = x.to(device), y.to(device)
             test_score += metric(model(x), y)
     print(f"\nFinal test score: {test_score / len(test_loader):.4f}")
+
+    del test_loader, test_set, dataset
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     classes_str = "-".join(map(str, TARGET_CLASSES))
 
@@ -188,8 +237,8 @@ if __name__ == "__main__" :
         'epochs': EPOCHS,
         'k_folds': K_FOLDS,
         'test_indices': test_idx,
-        'cv_val_score_mean': float(fold_scores.mean()),
-        'cv_val_score_std': float(fold_scores.std())
+        'cv_val_score_mean': float(fold_scores.mean()) if fold_scores.size else None,
+        'cv_val_score_std': float(fold_scores.std()) if fold_scores.size else None
     }
     
     os.makedirs("models", exist_ok=True)
