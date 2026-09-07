@@ -1,420 +1,337 @@
-# Doppler Spectrograms for CSI-Based Activity Recognition
+# CSI-Based Doppler Spectrograms for Human Activity Recognition
 
-This repository implements a full pipeline for processing Wi‑Fi CSI (Channel State Information) recordings, converting them into Doppler spectrograms, and classifying human activities with a convolutional neural network (CNN).
+## Abstract
 
-The project is designed for activity recognition and people-counting scenarios based on Doppler signatures extracted from CSI data. It includes preprocessing, spectrogram generation, dataset loading, model training, evaluation, confusion matrices, and plotting utilities.
+This repository implements a signal-processing and deep-learning pipeline for human activity recognition from Wi‑Fi Channel State Information (CSI). The proposed approach converts raw CSI measurements into Doppler spectrograms, which encode motion-induced frequency shifts associated with human movement. These spectrograms are then used as inputs to a convolutional neural network (CNN) for supervised classification.
 
-## Overview
+The project is designed for experimental activity recognition and people-counting tasks in indoor environments, where CSI variations caused by human motion can be analyzed as time-varying Doppler signatures. The implementation includes preprocessing, Doppler extraction, dataset construction, model training, cross-environment evaluation, and visualization utilities.
 
-The workflow is:
+## Keywords
 
-1. Load raw `.mat` CSI files
-2. Preprocess subcarriers and phase/amplitude information
-3. Generate Doppler spectrograms from temporal CSI sequences
-4. Save each spectrogram as a sample in a dataset
-5. Train a CNN on those samples
-6. Evaluate the model on unseen environments and classes
-7. Plot and compare results
-
-This project is especially tailored to EHUNAM-style experiments where each recording is associated with an activity or people-count label.
+CSI, Doppler spectrograms, Wi‑Fi sensing, human activity recognition, deep learning, convolutional neural networks, wireless signal processing.
 
 ---
 
-## Repository structure
+## 1. Introduction
 
-Important folders and files:
+Wi‑Fi-based sensing has emerged as a non-intrusive and low-cost alternative to traditional sensing modalities such as cameras, wearable sensors, or infrared systems. In particular, CSI provides fine-grained amplitude and phase information across multiple subcarriers, enabling the observation of propagation changes induced by human motion.
 
-- `data_ehunam/` — raw experiment files in `.mat` format
-- `data_preprocessed/` — processed CSI files after preprocessing
-- `doppler_output/` — generated Doppler spectrograms saved as `.txt` pickled arrays
-- `experiments/` — experiment outputs, model checkpoints, and generated plots
-- `models/` — trained CNN checkpoints
-- `matrix/` — confusion matrix and performance outputs
-- `plots/` — visual outputs from plotting scripts
-- `preprocessing.py` — CSI sanitization and pre-processing pipeline
-- `my_doppler_computation.py` — main Doppler extraction pipeline
-- `dataset.py` — dataset loader and cache management
-- `model.py` — CNN architecture
-- `train.py` — training script for the CNN
-- `eval.py` — evaluation across environments
-- `confusion_matrix.py` — confusion matrix generation
-- `CSI_doppler_computation.py` — alternative Doppler computation utility
-- `my_doppler_plot_activities.py` — activity spectrogram plotting
-- `run_experiments.sh` — batch pipeline for multiple parameter configurations
-- `run_cnn.sh` — training/evaluation helper for CNN runs
-- `prepare_data_for_cnn.sh` — full preparation workflow example
+The underlying hypothesis of this project is that motion patterns generate distinctive Doppler signatures, which can be represented as spectrogram-like energy distributions. These signatures can then be exploited by machine-learning models for classification tasks such as activity recognition or occupancy estimation.
+
+This repository provides a complete experimental pipeline from raw CSI recordings to class prediction. It includes the main steps required for reproducible research in this domain: preprocessing, feature extraction, dataset construction, model training, and evaluation.
 
 ---
 
-## Dependencies
+## 2. Problem Statement
 
-This project requires Python 3.8+ and commonly used scientific and ML libraries.
+The objective is to classify human activities or people-count states from CSI-derived Doppler features. Given a sequence of CSI measurements collected under controlled acquisition conditions, the system must extract motion-sensitive information and predict the associated activity class.
 
-Example installation:
+The project addresses several challenges inherent to CSI analysis:
 
-```bash
-pip install numpy scipy matplotlib h5py scikit-learn torch seaborn pillow
-```
-
-Depending on your environment, you may also want:
-
-```bash
-pip install tqdm pandas
-```
-
-If you are using a CUDA-enabled machine, PyTorch should be installed with the appropriate CUDA version for your system.
+- signal instability due to phase offsets and temporal drift
+- interference and noise in wireless measurements
+- variability across environments and acquisition conditions
+- limited and imbalanced labelled data
+- dependence on carefully tuned signal-processing parameters
 
 ---
 
-## Data format
+## 3. Methodology
 
-The raw data is expected to be stored as MATLAB `.mat` files containing at least:
+The methodology follows a standard CSI-to-spectrogram recognition pipeline:
 
-- `CSI`
-- `BW`
-- `Subcarriers`
-
-The project assumes recordings are organized by environment or acquisition group, for example:
-
-- `a/`, `b/`, `c/`, `d/`
-- or custom directories passed as arguments to the scripts
-
-The file names encode labels such as:
-
-- `MC1_01B_1_E_#_#_#_#_01.mat` → empty / no-people scenario
-- `MC1_01B_1_PC_ab_#_#_#_01.mat` → people-counting task with 2 people (`ab`)
-- `MC1_01B_1_PC_abc_#_#_#_01.mat` → 3 people
-
-The dataset loader infers the class by parsing the filename fields.
+1. Acquisition of raw CSI data from MATLAB files
+2. Removal of invalid or non-informative subcarriers
+3. Amplitude/phase reconstruction with phase calibration
+4. Mean-subtraction filtering to suppress static components
+5. Doppler extraction using time-windowed FFT analysis
+6. Normalization and noise thresholding
+7. Dataset generation from spectrogram profiles
+8. CNN-based classification
+9. Evaluation under cross-environment settings
 
 ---
 
-## Preprocessing pipeline
+## 4. Data and Experimental Setup
 
-The preprocessing step is implemented in `preprocessing.py`.
+### 4.1 Input data
 
-It performs three main stages:
+The raw dataset is expected to be stored as MATLAB files containing the following variables:
 
-### 1) Subcarrier removal
+- CSI
+- BW
+- Subcarriers
 
-Bad or unused subcarriers are removed depending on the bandwidth and file variant.
+Each acquisition file corresponds to a recorded wireless observation associated with a particular activity or occupancy condition. The file naming convention encodes the class or state, such as empty scenes or people-count situations.
 
-### 2) Phase normalization and amplitude-phase reconstruction
+Examples of the naming scheme include:
 
-The code applies a linear phase transformation to reduce temporal offsets and reconstruct a processed complex CSI signal from amplitude and phase components.
+- E: empty or no-person scenario
+- PC_ab: two-person case
+- PC_abc: three-person case
 
-### 3) Mean subtraction filtering
+The parsing logic used in the dataset loader infers labels directly from these file names.
 
-Static components are removed to make the signal more sensitive to motion and body movement.
+### 4.2 Acquisition structure
 
-Example usage:
+The repository supports multiple data environments, typically represented by folders such as:
 
-```bash
-python3 preprocessing.py /path/to/raw_data /path/to/output_processed_data
-```
+- a/
+- b/
+- c/
+- d/
 
-This creates processed `.mat` files in the output folder, which are then used as input to Doppler computation.
-
----
-
-## Doppler spectrogram generation
-
-The main Doppler extraction routine is in `my_doppler_computation.py`.
-
-This script:
-
-- loads processed CSI files
-- slices a time window from the signal
-- converts CSI to complex values
-- applies a Hann window
-- computes FFT along the temporal axis
-- obtains Doppler power maps
-- normalizes and filters the output
-- saves the resulting spectrograms as pickled NumPy arrays
-
-### Core parameters
-
-The script accepts the following key arguments:
-
-```bash
-python3 my_doppler_computation.py <dir> <subdirs> <dir_doppler> <start> <end> <sample_length> <sliding> <noise_level> [--tc ...] [--fft ...]
-```
-
-Where:
-
-- `dir` — input directory containing processed CSI `.mat` files
-- `subdirs` — comma-separated subdirectories to process (empty string allowed)
-- `dir_doppler` — destination folder for Doppler output
-- `start`, `end` — time-range indices used for slicing
-- `sample_length` — number of symbols in one sample window
-- `sliding` — sliding step between consecutive windows
-- `noise_level` — threshold level used for noise suppression
-- `--tc` — coherence time parameter, e.g. `8.5e-4`
-- `--fft` — FFT size, e.g. `100`, `256`, `1024`
-
-Example:
-
-```bash
-python3 my_doppler_computation.py data_preprocessed/ "" doppler_output/ 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024
-```
-
-The output is stored as `.txt` files: each file contains a pickled array shaped approximately as:
-
-- `(num_windows, fft_size)`
-
-Each row is one Doppler profile sample.
+This organization is useful for evaluating environment generalization, where a model is trained on one environment and tested on others.
 
 ---
 
-## Dataset loading and labels
+## 5. Preprocessing Pipeline
+
+The preprocessing stage is implemented in `preprocessing.py` and is essential for making CSI data suitable for Doppler analysis.
+
+### 5.1 Subcarrier filtering
+
+The code removes unreliable subcarriers depending on the bandwidth and acquisition configuration. This step reduces the impact of contaminated frequency bins that may otherwise distort the extracted motion signatures.
+
+### 5.2 Phase calibration
+
+Temporal drift and phase offsets are corrected using a linear phase transformation. This operation reduces slow-varying phase distortions that otherwise mask motion-related variations in CSI.
+
+### 5.3 Amplitude-phase reconstruction
+
+The signal is reconstructed from its amplitude and calibrated phase components, yielding a more consistent representation for the subsequent Doppler analysis.
+
+### 5.4 Mean subtraction
+
+A static mean subtraction is applied to suppress constant or quasi-static channel terms that do not contain relevant motion information. This improves the sensitivity of the final representation to dynamic movement patterns.
+
+---
+
+## 6. Doppler Spectrogram Extraction
+
+The core feature extraction stage is implemented in `my_doppler_computation.py`.
+
+The Doppler pipeline performs the following operations:
+
+- loads processed CSI matrices
+- selects the relevant temporal window
+- converts CSI samples into complex-valued signals
+- applies a Hann window to reduce spectral leakage
+- computes a Fourier transform along the temporal axis
+- obtains the Doppler energy map
+- normalizes the resulting feature vector
+- applies a noise threshold
+- stores the result as a serialized feature representation
+
+The extraction is parameterized by several important variables:
+
+- sample length
+- sliding step
+- noise threshold
+- coherence time parameter Tc
+- FFT size
+
+These parameters significantly affect the resulting spectrogram resolution and classification performance. In particular, the FFT size and time-window size influence the frequency resolution and temporal localization of the Doppler signature.
+
+Each saved output file contains a set of Doppler profiles, where each row corresponds to one spectrogram-like sample extracted from the original CSI sequence.
+
+---
+
+## 7. Dataset Construction
 
 The dataset logic is implemented in `dataset.py`.
 
-The loader:
+The loader scans all generated Doppler files and parses the filename to infer the associated class label. Each row of a Doppler output file becomes a distinct sample in the dataset. These samples are reshaped into a tensor of size `(1, 32, 32)`, which becomes the input to the CNN.
 
-- scans all `.txt` files in a Doppler folder
-- parses the file name to infer the class label
-- converts each Doppler profile row to a training sample
-- reshapes each profile to `(1, 32, 32)`
-- creates a PyTorch dataset object
+The dataset supports:
 
-Label conventions used by the project:
+- lazy loading
+- cached loading for RAM-efficient execution
+- class filtering based on selected labels
 
-- `E` → no person → label `0`
-- `PC_ab` → 2 people → label `2`
-- `PC_abc` → 3 people → label `3`
-- ...
-
-The loader also includes a cache mode for RAM-friendly loading when the dataset fits in memory.
+This allows the system to work with datasets of varying size while preserving reproducibility and computational efficiency.
 
 ---
 
-## CNN model
+## 8. Convolutional Neural Network Architecture
 
-The neural network architecture is defined in `model.py`.
+The CNN architecture is defined in `model.py`.
 
-It uses a compact CNN with:
+The model consists of stacked convolutional layers with:
 
-- 3 convolution blocks
 - Mish activation
-- Batch normalization
-- Max pooling
-- Dropout
-- fully-connected layers for classification
+- batch normalization
+- max-pooling
+- dropout regularization
+- flattening
+- fully connected layers for classification
 
-The model expects input shape:
+This design is appropriate for spectrogram-like inputs, as it captures localized spatial patterns and frequency-energy distributions in the Doppler map.
 
-```python
-(batch_size, 1, 32, 32)
-```
-
-and outputs logits for a selected number of target classes.
+The network output is a set of class logits, which are interpreted as predicted activity or occupancy classes. The training process uses the cross-entropy loss function and the Adam optimizer.
 
 ---
 
-## Training
+## 9. Training Procedure
 
 The training pipeline is implemented in `train.py`.
 
-Main features:
+The procedure includes:
 
-- loads a Doppler dataset from a directory
-- filters samples by class
-- optionally performs stratified k-fold validation
-- trains the CNN with Adam optimizer
-- saves the trained checkpoint into `models/`
-- supports train/test split and robust evaluation
+- loading the Doppler dataset
+- selecting a subset of target classes
+- performing a train/validation split
+- optionally running stratified cross-validation
+- training the CNN over a fixed number of epochs
+- saving the resulting model checkpoint
 
-Typical training command:
+The script also computes class weights and supports evaluation on a held-out test subset. This helps mitigate class imbalance and provides a more reliable estimate of generalization performance.
+
+The trained model is saved in the `models/` directory under a filename encoding the environment, class set, epoch count, and fold configuration.
+
+---
+
+## 10. Evaluation Strategy
+
+The repository includes evaluation tools for cross-environment generalization, which is a critical requirement in real wireless sensing applications.
+
+The evaluation process includes:
+
+- loading a previously trained model
+- testing on environments different from the training environment
+- measuring classification accuracy
+- producing confusion matrices to analyze class-level errors
+
+This type of evaluation is necessary because CSI features are sensitive to propagation conditions, device position, and room geometry. A strong model should therefore be evaluated beyond a single acquisition environment.
+
+---
+
+## 11. Visualization and Analysis
+
+Several utilities are provided to visualize the extracted Doppler signatures and classification outputs:
+
+- activity-level Doppler plots
+- antenna-wise comparisons
+- confusion matrices
+- spectrogram summaries across experiments
+
+These visualizations are useful for both qualitative inspection and quantitative validation of the signal-processing pipeline.
+
+---
+
+## 12. Repository Structure
+
+The repository contains the following main components:
+
+- `preprocessing.py` — CSI calibration and denoising pipeline
+- `my_doppler_computation.py` — Doppler feature extraction
+- `dataset.py` — dataset creation and caching
+- `model.py` — CNN architecture
+- `train.py` — training routine
+- `eval.py` — cross-environment evaluation
+- `confusion_matrix.py` — confusion matrix generation
+- `run_experiments.sh` — automated experiment runner
+- `run_cnn.sh` — training and evaluation helper
+- `prepare_data_for_cnn.sh` — example full preprocessing workflow
+- `data_preprocessed/` — processed CSI files
+- `doppler_output/` — extracted Doppler profiles
+- `models/` — saved trained checkpoints
+- `matrix/` — performance plots and confusion outputs
+- `plots/` — visualization outputs
+
+---
+
+## 13. Usage
+
+### 13.1 Preprocessing
+
+```bash
+python3 preprocessing.py /path/to/raw_data /path/to/preprocessed_data
+```
+
+### 13.2 Doppler extraction
+
+```bash
+python3 my_doppler_computation.py /path/to/preprocessed_data/ "" /path/to/doppler_output/ 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024
+```
+
+### 13.3 Training
 
 ```bash
 python3 train.py --train_env doppler_output_a --epochs 20 --root_dir /path/to/root --classes 0 1 2 3 4
 ```
 
-The script also supports:
+### 13.4 Training with k-fold cross-validation
 
 ```bash
---k-folds 3
+python3 train.py --train_env doppler_output_a --epochs 20 --k-folds 3 --root_dir /path/to/root --classes 0 1 2 3 4
 ```
 
-for cross-validation diagnostics.
+This performs a stratified k-fold validation on the training pool and reports the mean validation score across folds.
 
-### Training output
-
-A model is saved as a `.pth` checkpoint, for example:
-
-```text
-models/model_doppler_d_classes_0-1-2-3-4_epochs_20_kfolds_1.pth
-```
-
-The checkpoint contains:
-
-- `model_state_dict`
-- `train_env`
-- `num_classes`
-- `target_classes`
-- `root_dir`
-- `epochs`
-- `k_folds`
-- test indices and validation statistics
-
----
-
-## Evaluation and confusion matrices
-
-### Evaluation
-
-The script `eval.py` loads a saved model and evaluates it on different environments.
-
-Example:
+### 13.5 Evaluation
 
 ```bash
 python3 eval.py --env a --epochs 20 --classes 0 1 2 3 4
 ```
 
-This computes cross-environment accuracy, e.g. training on environment `a` and testing on `b`, `c`, `d`.
-
-### Confusion matrix
-
-The repository also contains `confusion_matrix.py` to compare actual vs predicted classes and produce classification metrics.
-
-This is useful to assess which activities are confused with each other.
-
----
-
-## Plotting utilities
-
-Several scripts produce visual outputs:
-
-- `my_doppler_plot_activities.py` — plots Doppler spectrograms for activity classes
-- `CSI_doppler_plot_activities.py` — older plotting utility for activity comparisons
-- `CSI_doppler_plots_antennas.py` — antenna-wise representations
-- `plots_utility.py` — plotting backend functions
-
-The scripts generate heatmaps and spectrogram figures used in experiments and reports.
-
----
-
-## Shell helper scripts
-
-### `prepare_data_for_cnn.sh`
-
-This script shows a typical preparation pipeline for several environment folders:
-
-- preprocess raw CSI files
-- generate Doppler outputs
-- prepare the dataset for training
-
-### `run_experiments.sh`
-
-This script iterates over multiple parameter combinations such as:
-
-- `Tc` values
-- FFT lengths
-- noise thresholds
-
-Example configuration values in the repo:
-
-```bash
-TC_VALUES=("6e-3" "8.5e-4" "9.5e-4" "1e-3")
-FFT_VALUES=(100 256 1024)
-NOISE_VALUES=("-0.7" "-2" "-3")
-```
-
-This makes it possible to compare experiment variants systematically.
-
-### `run_cnn.sh`
-
-This script automates training and evaluation for the CNN using a chosen environment and class set.
-
-Example:
-
-```bash
-./run_cnn.sh 20 1 /path/to/root 0 1 2 3 4
-```
-
-Arguments are:
-
-1. number of epochs
-2. number of k-folds
-3. dataset root directory
-4. class IDs to include
-
----
-
-## Typical full workflow
-
-A standard end-to-end workflow looks like this:
-
-### 1. Preprocess raw CSI data
-
-```bash
-python3 preprocessing.py /path/to/raw_data /path/to/data_preprocessed
-```
-
-### 2. Generate Doppler spectrograms
-
-```bash
-python3 my_doppler_computation.py /path/to/data_preprocessed/ "" /path/to/doppler_output/ 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024
-```
-
-### 3. Train the CNN
-
-```bash
-python3 train.py --train_env doppler_output_a --epochs 20 --root_dir /path/to/root --classes 0 1 2 3 4
-```
-
-### 4. Evaluate on unseen environments
-
-```bash
-python3 eval.py --env a --epochs 20 --classes 0 1 2 3 4
-```
-
-### 5. Generate confusion visualizations
+### 13.6 Confusion matrix generation
 
 ```bash
 python3 confusion_matrix.py --epochs 20 --classes 0 1 2 3 4
 ```
 
----
-
-## Notes on practical usage
-
-- Many scripts assume rigid folder structures and environment names such as `a`, `b`, `c`, `d`.
-- Shell scripts may include hard-coded absolute paths; update them for your local machine.
-- The generated Doppler outputs are usually large; ensure enough disk space and RAM for dataset caching.
-- The project is experimental and parameter-sensitive; `Tc`, FFT size, SLIDING, and noise thresholds strongly influence the resulting spectrograms.
-
----
-
-## Quick start summary
+### 13.7 Batch training script example
 
 ```bash
-# 1. preprocess raw CSI files
-python3 preprocessing.py /path/to/raw_data /path/to/data_preprocessed
-
-# 2. create Doppler profiles
-python3 my_doppler_computation.py /path/to/data_preprocessed/ "" /path/to/doppler_output/ 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024
-
-# 3. train the CNN
-python3 train.py --train_env doppler_output_a --epochs 20 --root_dir /path/to/root --classes 0 1 2 3 4
-
-# 4. evaluate the model
-python3 eval.py --env a --epochs 20 --classes 0 1 2 3 4
+./run_cnn.sh 20 3 /path/to/root 0 1 2 3 4
 ```
 
----
-
-## Project goal
-
-The goal of this repo is to transform CSI measurements into motion-dependent Doppler signatures and use them for activity recognition with deep learning. It sits at the intersection of wireless sensing, signal processing, and computer vision-style classification.
-
-This makes it a useful baseline for research on human activity recognition, occupancy estimation, and environment-independent CSI classification.
+This script runs the training pipeline for a selected environment with the specified number of epochs and k-folds, then evaluates the resulting model.
 
 ---
 
-## License and usage
+## 14. Experimental Parameters
 
-This project is intended for research and internal experimentation. If you reuse it, please adapt the paths and parameters to your dataset and environment.
+The project includes multiple configurable parameters that strongly influence performance:
 
-If you are using this repository as a starting point for a new study, be sure to review the preprocessing parameters carefully because even small changes in `Tc`, FFT size, or noise threshold can significantly affect model performance.
+- FFT size
+- sliding window length
+- selected CSI time interval
+- noise threshold
+- coherence-time parameter Tc
+- class selection
+
+These parameters must be tuned carefully, as variations in them may lead to different spectral resolutions and therefore materially different classification outcomes.
+
+---
+
+## 15. Limitations and Perspectives
+
+Although the approach is effective in controlled experimental settings, several limitations remain:
+
+- sensitivity to environment changes and propagation conditions
+- dependence on labelled datasets and data quality
+- possible degradation in performance under noisy or heterogeneous conditions
+- need for careful parameter tuning for each dataset
+
+Future work may include:
+
+- domain adaptation to improve cross-environment robustness
+- augmentation strategies for CSI data
+- integration of temporal models for sequence-aware classification
+- extension to more complex activity taxonomies and occupancy estimation tasks
+
+---
+
+## 16. Conclusion
+
+This repository presents a practical and reproducible pipeline for CSI-based activity recognition using Doppler spectrograms and convolutional neural networks. The combination of signal processing and deep learning provides a robust foundation for motion sensing in Wi‑Fi environments.
+
+The implementation is particularly relevant for research on wireless sensing, passive human monitoring, and non-invasive activity recognition, where CSI offers a rich but complex representation of motion-induced propagation changes.
+
+---
+
+## 17. License and Usage Note
+
+This project is intended for research and experimental use. The scripts contain hard-coded paths and parameter choices that may need to be adjusted to a specific dataset or hardware setup. It is therefore recommended to review the configuration files before running large-scale experiments.
