@@ -1,9 +1,8 @@
 #!/bin/bash
 
 EPOCHS=$1
-KFOLDS=$2
-ROOTDIR=$3
-CLASSES=${*:4}
+ROOTDIR=$2
+CLASSES=${*:3   }
 RESULTS_FILE="$(dirname "$0")/resultats.txt"
 TIMING_DIR=$(mktemp -d)
 trap 'rm -rf "$TIMING_DIR"' EXIT
@@ -34,10 +33,9 @@ run_training() {
     echo "Training phase..."
     echo "--------------------------------------------------------"
     /usr/bin/time -f '%e' -o "$TIMING_DIR/$environment" \
-        python3 train.py \
+        python3 train_test.py \
         --train_env "$environment" \
         --epochs "$EPOCHS" \
-        --k-folds "$KFOLDS" \
         --root_dir "$ROOTDIR" \
         --classes $CLASSES
 
@@ -46,9 +44,9 @@ run_training() {
     echo "========================================================"
 }
 
-# run_training doppler_output_a
-# run_training doppler_output_b
-# run_training doppler_output_c
+run_training doppler_output_a
+run_training doppler_output_b
+run_training doppler_output_c
 run_training doppler_output_d
 
 matrix_start=$(date +%s.%N)
@@ -58,7 +56,7 @@ echo "========================================================"
 /usr/bin/time -f '%e' -o "$TIMING_DIR/matrix" \
     python3 confusion_matrix.py \
     --epochs "$EPOCHS" \
-    --k-folds "$KFOLDS" \
+    --k-folds 1 \
     --classes $CLASSES
 matrix_end=$(date +%s.%N)
 
@@ -71,7 +69,7 @@ TOTAL_SECONDS=$(awk \
     'BEGIN { print a + b + c + d + matrix }')
 
 {
-    echo "kfold : $KFOLDS"
+    echo "kfold : 1"
     echo "$EPOCHS epochs : $(format_duration "$TOTAL_SECONDS")"
     echo "a : $(format_duration "$(cat "$TIMING_DIR/doppler_output_a")")"
     echo "b : $(format_duration "$(cat "$TIMING_DIR/doppler_output_b")")"
