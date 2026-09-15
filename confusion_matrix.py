@@ -10,6 +10,8 @@ from model import CNN
 from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
+MODEL_DIR = "models/tests"
+MATRIX_DIR = "matrix/tests"
 
 
 def normalize_target_classes(classes):
@@ -71,10 +73,10 @@ def plot_full_matrix(matrix, env_names, epochs, target_classes, k_folds=None):
     plt.tight_layout()
     
     # Create the matrix folder if it doesn't exist
-    os.makedirs("matrix", exist_ok=True)
+    os.makedirs(MATRIX_DIR, exist_ok=True)
     classes_str = "-".join(map(str, sorted(target_classes)))
     kfold_suffix = f"_kfolds_{k_folds}" if k_folds is not None else ""
-    save_path = f"matrix/full_cross_env_accuracy_classes_{classes_str}_epochs_{epochs}{kfold_suffix}.png"
+    save_path = f"{MATRIX_DIR}/full_cross_env_accuracy_classes_{classes_str}_epochs_{epochs}{kfold_suffix}.png"
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"\nFull matrix saved -> {save_path}")
@@ -98,10 +100,10 @@ if __name__ == "__main__":
 
     # 1. Load an initial model just to extract global metadata (env_names, root_dir)
     model_prefix = build_model_filename("a", classes_str, args.epochs, args.k_folds)
-    INITIAL_MODEL_PATH = os.path.join("models", model_prefix)
+    INITIAL_MODEL_PATH = os.path.join(MODEL_DIR, model_prefix)
     if not os.path.exists(INITIAL_MODEL_PATH):
         matching_initial_models = [
-            m for m in os.listdir("models")
+            m for m in os.listdir(MODEL_DIR)
             if m.startswith("model_doppler_a_classes_")
             and m.endswith(f"_epochs_{args.epochs}.pth")
             and (args.k_folds is None or f"_kfolds_{args.k_folds}.pth" in m or "_kfolds_" not in m)
@@ -122,7 +124,7 @@ if __name__ == "__main__":
         elif not matching_initial_models:
             raise FileNotFoundError(f"No model found for environment a with classes {target_classes}")
         else:
-            INITIAL_MODEL_PATH = os.path.join("models", normalized_candidates[0])
+            INITIAL_MODEL_PATH = os.path.join(MODEL_DIR, normalized_candidates[0])
 
     checkpoint = torch.load(INITIAL_MODEL_PATH, map_location=device, weights_only=False)
     env_names = checkpoint['env_names']
@@ -144,10 +146,10 @@ if __name__ == "__main__":
     # 2. Loop over columns (Training environments)
     for j, train_env in enumerate(env_names):
         expected_model = build_model_filename(train_env[-1], classes_str, args.epochs, k_folds)
-        model_path = os.path.join("models", expected_model)
+        model_path = os.path.join(MODEL_DIR, expected_model)
         if not os.path.exists(model_path):
             matching_models = [
-                m for m in os.listdir("models")
+                m for m in os.listdir(MODEL_DIR)
                 if m.startswith(f"model_doppler_{train_env[-1]}_classes_{classes_str}_")
                 and m.endswith(f"_epochs_{args.epochs}.pth")
             ]

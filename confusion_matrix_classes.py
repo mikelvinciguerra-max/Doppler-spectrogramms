@@ -10,6 +10,8 @@ from model import CNN
 from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
+DEFAULT_MODEL_DIR = 'models/tests'
+MATRIX_DIR = 'matrix/tests'
 
 CLASS_NAME_BY_INDEX = {
     0: 'Class 0',
@@ -117,13 +119,13 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
     plt.ylabel('True')
 
     if save:
-        os.makedirs('matrix/classes', exist_ok=True)
+        os.makedirs(MATRIX_DIR, exist_ok=True)
         train_label = str(train_env).split('_')[-1]
         test_labels = [str(env).split('_')[-1] for env in eval_envs]
         test_label = '-'.join(test_labels)
         class_suffix = get_filename_class_suffix(target_classes)
         kfold_suffix = f"_kfolds_{k_folds}" if k_folds != 'unknown' else ''
-        save_path = os.path.join('matrix/classes/', f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}{kfold_suffix}.png")
+        save_path = os.path.join(MATRIX_DIR, f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}{kfold_suffix}.png")
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
         print(f"Saved confusion matrix -> {save_path}")
@@ -165,7 +167,7 @@ def main():
     parser = argparse.ArgumentParser(description="Plot confusion matrix for specified train/test environments")
     parser.add_argument('--train-env', required=True, help="Training environment identifier (letter like 'a' or 'doppler_output_a')")
     parser.add_argument('--test-envs', nargs='+', help="One or more test environment identifiers (letters like 'b c')")
-    parser.add_argument('--model-dir', default='models', help='Directory where checkpoints are stored')
+    parser.add_argument('--model-dir', default=DEFAULT_MODEL_DIR, help='Directory where checkpoints are stored')
     parser.add_argument('--epochs', type=int, help='Filter model by epoch count if desired')
     parser.add_argument('--k-folds', type=int, help='Filter model by k-fold count if desired')
     parser.add_argument('--classes', nargs='+', type=int, help='Target classes to consider (overrides checkpoint if provided)')
