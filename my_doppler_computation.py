@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import scipy.io as sio
 import math as mt
+import shutil
 from scipy.fftpack import fft
 from scipy.fftpack import fftshift
 from scipy.signal.windows import hann
@@ -9,6 +10,16 @@ import pickle
 import os
 import time
 from scipy.ndimage import gaussian_filter1d
+from tqdm import tqdm
+
+
+def clear_output_folder(output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    for entry in os.scandir(output_folder):
+        if entry.is_dir(follow_symlinks=False):
+            shutil.rmtree(entry.path)
+        else:
+            os.unlink(entry.path)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
@@ -52,8 +63,7 @@ if __name__ == '__main__':
 
     for subdir in list_subdir.split(','):
         path_doppler = args.dir_doppler + subdir
-        if not os.path.exists(path_doppler):
-            os.mkdir(path_doppler)
+        clear_output_folder(path_doppler)
 
         exp_dir = args.dir + subdir + '/'
 
@@ -63,33 +73,33 @@ if __name__ == '__main__':
             if (all_files[i][-4:] == '.mat'):
                 names.append(all_files[i][:-4])
 
-        print(f"\n[Input] Directory: {exp_dir}")
-        print(f"[Found] {len(names)} files to process")
-        print(f"[Output] Directory: {path_doppler}")
-        print(f"[Parameters] BW: {bandwidth} MHz, Samples: {args.sample_length}, Sliding: {sliding}, Noise: {noise_lev} dB, Tc: {Tc}s, FFT: {args.fft}")
-        print("-"*60)
+        # print(f"\n[Input] Directory: {exp_dir}")
+        # print(f"[Found] {len(names)} files to process")
+        # print(f"[Output] Directory: {path_doppler}")
+        # print(f"[Parameters] BW: {bandwidth} MHz, Samples: {args.sample_length}, Sliding: {sliding}, Noise: {noise_lev} dB, Tc: {Tc}s, FFT: {args.fft}")
+        # print("-"*60)
 
-        for name in names:
+        for name in tqdm(names, desc=f"Processing {subdir or '/'}", unit="file"):
             file_start = time.time()
             path_doppler_name = path_doppler + '/' + name + '.txt'
             
-            print(f"\n{'='*60}")
-            print(f"Processing: {name}")
-            print(f"{'='*60}")
+            # print(f"\n{'='*60}")
+            # print(f"Processing: {name}")
+            # print(f"{'='*60}")
 
             name_file = exp_dir + name + '.mat'
             mdic = sio.loadmat(name_file)
             csi_matrix_processed = mdic['CSI']
-            print(f"  • Input shape: {csi_matrix_processed.shape}")
-            print(f"  • Data type: {csi_matrix_processed.dtype}")
+            # print(f"  • Input shape: {csi_matrix_processed.shape}")
+            # print(f"  • Data type: {csi_matrix_processed.dtype}")
 
             csi_matrix_processed = csi_matrix_processed[args.start:args.end, :, :]
-            print(f"  • Sliced shape: {csi_matrix_processed.shape}")
+            # print(f"  • Sliced shape: {csi_matrix_processed.shape}")
             
             csi_matrix_complete = csi_matrix_processed[:, :, 0]*np.exp(1j*csi_matrix_processed[:, :, 1])
 
             csi_d_profile_list = []
-            print(f"  • Computing Doppler profiles...")
+            # print(f"  • Computing Doppler profiles...")
             num_iterations = (csi_matrix_complete.shape[0] - num_symbols) // sliding
             for i in range(0, csi_matrix_complete.shape[0]-num_symbols, sliding):
                 csi_matrix_cut = csi_matrix_complete[i:i+num_symbols, :]
@@ -117,9 +127,9 @@ if __name__ == '__main__':
                 pickle.dump(csi_d_profile_array, fp)
             
             file_elapsed = time.time() - file_start
-            print(f"  • Output shape: {csi_d_profile_array.shape}")
-            print(f"✓ Saved to: {path_doppler_name}")
-            print(f"  • Time elapsed: {file_elapsed:.2f}s")
+            # print(f"  • Output shape: {csi_d_profile_array.shape}")
+            # print(f"✓ Saved to: {path_doppler_name}")
+            # print(f"  • Time elapsed: {file_elapsed:.2f}s")
     
     print("\n" + "#"*60)
     print("#  DOPPLER COMPUTATION COMPLETED")
