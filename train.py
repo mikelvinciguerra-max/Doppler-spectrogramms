@@ -3,6 +3,7 @@ import gc
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 import numpy as np
@@ -32,6 +33,39 @@ class MappedDataset(torch.utils.data.Dataset):
         x, y = self.base_dataset[sample_idx]
         label = int(y.item())
         return x, torch.tensor(self.label_to_index[label], dtype=torch.long)
+
+
+class FocalLoss(nn.Module):
+    """Multi-class focal loss (Lin et al., 2017): down-weights examples the
+    model already gets right so gradient focuses on the hard ones.
+
+    p_t is recovered from an UNWEIGHTED cross-entropy (weighting it first
+    would distort exp(-ce_loss) into p_t ** alpha instead of p_t). alpha is
+    applied afterwards, as a separate per-sample multiplier. With gamma=0
+    this is exactly a weighted cross-entropy.
+    """
+    def __init__(self, alpha=None, gamma=2.0, reduction='mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, logits, target):
+        ce_loss = F.cross_entropy(logits, target, reduction='none')
+        pt = torch.exp(-ce_loss)
+        loss = ((1 - pt) ** self.gamma) * ce_loss
+
+        if self.alpha is not None:
+            alpha_t = self.alpha[target]
+            loss = alpha_t * loss
+            if self.reduction == 'mean':
+                return loss.sum() / alpha_t.sum()
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
 
 
 def train(train_loader, valid_loader, epochs, model, criterion, metric, optimizer, device):
@@ -93,17 +127,18 @@ if __name__ == "__main__" :
     parser.add_argument("--train_env", type=str, default="doppler_output_a", help="Folder name of the training environment")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument("--root_dir", type=str, default="/media/mikel/Elements1/MikelVinciguerra/dataset_PC_ehunam/" , help="Root dir")
-    parser.add_argument("--classes", nargs='+', type=int, default=[1, 2, 3, 4], help="Classes to train on (class 0 is not used)") 
+    parser.add_argument("--classes", nargs='+', type=int, default=[0, 1, 2, 3, 4], help="Classes to train on (class 0 is not used)") 
     parser.add_argument("--k-folds", type=int, default=1, help="Number of stratified CV folds for the robustness check")
+    parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal loss focusing parameter (0 = plain weighted cross-entropy)")
+    parser.add_argument("--batch_size", type=int, default=0, help="Batch size (default: 0 for auto-calculation based on dataset size)")
     args = parser.parse_args()
 
     ROOT_DIR     = args.root_dir    
     TRAIN_ENV    = args.train_env                            
     ENV_NAMES    = ["a", "b", "c", "d"] 
     VALID_CLASSES = [0, 1, 2, 3, 4]
-    BATCH_SIZE   = 64
-    EPOCHS       = args.epochs
-    LR           = 1e-4
+    EPOCHS       = args.epochs    
+    LR           = 1e-3
     TARGET_CLASSES = sorted({cls for cls in args.classes if cls in VALID_CLASSES})
     K_FOLDS      = args.k_folds
     if K_FOLDS < 1:
@@ -129,7 +164,6 @@ if __name__ == "__main__" :
             filtered_indices.append(i)
             filtered_labels.append(int(label))
 
-    # Class weights (inverse frequency) to compensate for imbalance without discarding data
     unique_classes, class_counts = np.unique(filtered_labels, return_counts=True)
     print(f"Class counts: {dict(zip(unique_classes.tolist(), [int(c) for c in class_counts.tolist()]))}")
     total = class_counts.sum()
@@ -138,21 +172,34 @@ if __name__ == "__main__" :
         weights[LABEL_TO_INDEX[int(cls_idx)]] = total / (len(unique_classes) * count)
     class_weights = torch.tensor(weights, device=device)
     print(f"Class weights: {weights}")
-    # criterion = nn.CrossEntropyLoss(weight=class_weights)
-    criterion = nn.CrossEntropyLoss()
+    print(f"Focal gamma: {args.focal_gamma}")
+    criterion = FocalLoss(alpha=class_weights, gamma=args.focal_gamma)
 
-
-    # Held-out test set (17.5%): untouched by the cross-validation below and by the final
-    # fit, so confusion_matrix.py can evaluate it as genuinely unseen data.
     train_valid_idx, test_idx, y_train_valid, y_test = train_test_split(
         filtered_indices, filtered_labels,
         test_size=0.175, stratify=filtered_labels, random_state=42
     )
+
+    # ADDED: Dynamic Batch Size Calculation
+    num_train_samples = len(train_valid_idx)
+    if args.batch_size > 0:
+        BATCH_SIZE = args.batch_size
+        print(f"\n[Auto-Config] Using manually provided BATCH_SIZE: {BATCH_SIZE}")
+    else:
+        if num_train_samples <= 120:
+            BATCH_SIZE = 8
+        elif num_train_samples <= 300:
+            BATCH_SIZE = 16
+        elif num_train_samples <= 600:
+            BATCH_SIZE = 32
+        else:
+            BATCH_SIZE = 64
+        print(f"\n[Auto-Config] Training pool size is {num_train_samples}. Automatically setting BATCH_SIZE to {BATCH_SIZE} to ensure sufficient gradient updates.")
+
     test_set = MappedDataset(dataset, test_idx, LABEL_TO_INDEX)
+    # MODIFIED: Applying the dynamically calculated BATCH_SIZE
     test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
-    # Stratified K-Fold on the remaining 82.5%: gives a fold-averaged validation score
-    # instead of relying on a single train/valid split that can be lucky or unlucky.
     train_valid_idx = np.array(train_valid_idx)
     y_train_valid = np.array(y_train_valid)
     fold_scores = []
@@ -168,6 +215,8 @@ if __name__ == "__main__" :
 
             fold_train_dataset = MappedDataset(dataset, train_valid_idx[fold_train_pos], LABEL_TO_INDEX)
             fold_valid_dataset = MappedDataset(dataset, train_valid_idx[fold_valid_pos], LABEL_TO_INDEX)
+            
+            # MODIFIED: Applying the dynamically calculated BATCH_SIZE
             fold_train_loader = DataLoader(fold_train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
             fold_valid_loader = DataLoader(fold_valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
@@ -189,13 +238,10 @@ if __name__ == "__main__" :
     if fold_scores.size:
         print(f"\nCV val_score: {fold_scores.mean():.4f} +/- {fold_scores.std():.4f} (per fold: {[f'{s:.4f}' for s in fold_scores]})")
 
-    # Final model: fit on the whole train+valid pool (all folds combined, no internal
-    # validation split) using the hyperparameters just validated above. This is the model
-    # that gets saved and used downstream by confusion_matrix.py — the CV loop above is a
-    # diagnostic step, not the deployed model.
     print(f"\nFitting final model on the full train+valid pool ({len(train_valid_idx)} samples)...")
 
     final_train_dataset = MappedDataset(dataset, train_valid_idx, LABEL_TO_INDEX)
+    # MODIFIED: Applying the dynamically calculated BATCH_SIZE
     final_train_loader = DataLoader(final_train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
 
     model = CNN(input_channels=1, num_classes=NUM_CLASSES).to(device)
@@ -236,12 +282,16 @@ if __name__ == "__main__" :
         'root_dir': ROOT_DIR,
         'epochs': EPOCHS,
         'k_folds': K_FOLDS,
+        'focal_gamma': args.focal_gamma,
         'test_indices': test_idx,
         'cv_val_score_mean': float(fold_scores.mean()) if fold_scores.size else None,
-        'cv_val_score_std': float(fold_scores.std()) if fold_scores.size else None
+        'cv_val_score_std': float(fold_scores.std()) if fold_scores.size else None,
+        'train_loss_history': history['loss'],
+        'train_score_history': history['score']
     }
     
-    os.makedirs("models", exist_ok=True)
-    model_filename = f"models/model_doppler_{TRAIN_ENV[-1]}_classes_{classes_str}_epochs_{EPOCHS}_kfolds_{K_FOLDS}.pth"
+    model_dir = "models/tests"
+    os.makedirs(model_dir, exist_ok=True)
+    model_filename = f"{model_dir}/{TRAIN_ENV[-1]}_classes_{classes_str}_epochs_{EPOCHS}_kfolds_{K_FOLDS}.pth"
     torch.save(checkpoint, model_filename)
     print(f"Model saved -> {model_filename}")
