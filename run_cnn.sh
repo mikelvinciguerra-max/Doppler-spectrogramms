@@ -1,12 +1,28 @@
 #!/bin/bash
 
+set -o pipefail
+
 EPOCHS=$1
 KFOLDS=$2
 ROOTDIR=$3
 CLASSES=${*:4}
 RESULTS_FILE="$(dirname "$0")/resultats.txt"
+LOG_DIR="$(dirname "$0")/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/run_cnn_$(date +%Y%m%d_%H%M%S).log"
 TIMING_DIR=$(mktemp -d)
-trap 'rm -rf "$TIMING_DIR"' EXIT
+CURRENT_STAGE="initialisation"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+cleanup() {
+    local status=$?
+    echo ""
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] run_cnn stopped during: $CURRENT_STAGE (exit code: $status)"
+    echo "Log file: $LOG_FILE"
+    rm -rf "$TIMING_DIR"
+}
+trap cleanup EXIT
 
 if [ -z "$CLASSES" ]; then
     CLASSES="0 1 2 3 4"
@@ -26,9 +42,10 @@ format_duration() {
 
 run_training() {
     local environment="$1"
+    CURRENT_STAGE="training $environment"
 
     echo "========================================================"
-    echo "Starting of the pipeline : training on $environment"
+    echo "Starting of the pipeline : training on ${environment: -1}"
     echo "========================================================"
     echo ""
     echo "Training phase..."
@@ -40,18 +57,24 @@ run_training() {
         --k-folds "$KFOLDS" \
         --root_dir "$ROOTDIR" \
         --classes $CLASSES
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "Training failed for $environment (exit code: $status)"
+        return "$status"
+    fi
 
     echo ""
     echo "Pipeline terminated successfully for $environment !"
     echo "========================================================"
 }
 
-# run_training doppler_output_a
-# run_training doppler_output_b
-# run_training doppler_output_c
-run_training doppler_output_d
+run_training doppler_output_a || exit $?
+run_training doppler_output_b || exit $?
+run_training doppler_output_c || exit $?
+run_training doppler_output_d || exit $?
 
 matrix_start=$(date +%s.%N)
+CURRENT_STAGE="confusion matrix"
 echo "========================================================"
 echo "Starting confusion_matrix.py"
 echo "========================================================"
@@ -60,6 +83,11 @@ echo "========================================================"
     --epochs "$EPOCHS" \
     --k-folds "$KFOLDS" \
     --classes $CLASSES
+matrix_status=$?
+if [ "$matrix_status" -ne 0 ]; then
+    echo "Confusion matrix failed (exit code: $matrix_status)"
+    exit "$matrix_status"
+fi
 matrix_end=$(date +%s.%N)
 
 TOTAL_SECONDS=$(awk \
