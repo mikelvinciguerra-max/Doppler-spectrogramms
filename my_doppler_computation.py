@@ -12,8 +12,72 @@ import time
 from scipy.ndimage import gaussian_filter1d
 from tqdm import tqdm
 
+EPS = 1e-10
+
+# ADDED: V1 Processing Function
+def v1_log_dc_removal(spectrogram, dc_bins=1, clip_db=40.0):
+    """Remove central DC bins and normalize spectrogram values in dB.
+
+    Args:
+        spectrogram: Spectrogram arranged as frequency by time.
+        dc_bins: Number of bins removed on each side of the central bin.
+        clip_db: Dynamic range retained below the maximum value.
+
+    Returns:
+        A ``float32`` spectrogram normalized to the range ``[0, 1]``.
+    """
+    spec = spectrogram.copy().astype(np.float64)
+    center = spec.shape[0] // 2
+    spec[max(0, center - dc_bins): center + dc_bins + 1, :] = 0.0
+    spec_db = 20 * np.log10(spec + EPS)
+    floor = spec_db.max() - clip_db
+    spec_db = np.clip(spec_db, floor, spec_db.max())
+    spec_norm = (spec_db - floor) / (clip_db + EPS)
+    return spec_norm.astype(np.float32)
+
+# ADDED: V3 Processing Function
+def v3_percentile_normalization(spectrogram, low_pct=1, high_pct=99):
+    """Clip a spectrogram to percentiles and normalize it to ``[0, 1]``.
+
+    Args:
+        spectrogram: Spectrogram to normalize.
+        low_pct: Lower percentile used as the clipping boundary.
+        high_pct: Upper percentile used as the clipping boundary.
+
+    Returns:
+        A clipped and normalized ``float32`` spectrogram.
+    """
+    lo, hi = np.percentile(spectrogram, [low_pct, high_pct])
+    spec = np.clip(spectrogram, lo, hi)
+    spec = (spec - lo) / (hi - lo + EPS)
+    return spec.astype(np.float32)
+
+# ADDED: V4 Processing Function
+def v4_noise_floor_masking(spectrogram, noise_floor_pct=20, per_bin=True):
+    """Mask values below a percentile noise floor and standardize the result.
+
+    Args:
+        spectrogram: Spectrogram to process.
+        noise_floor_pct: Percentile used to estimate the noise floor.
+        per_bin: Standardize each frequency bin independently when true;
+            otherwise standardize the complete spectrogram.
+
+    Returns:
+        A noise-floor-masked and standardized ``float32`` spectrogram.
+    """
+    noise_floor = np.percentile(spectrogram, noise_floor_pct)
+    spec = np.where(spectrogram > noise_floor, spectrogram - noise_floor, 0.0)
+    if per_bin:
+        mu = spec.mean(axis=1, keepdims=True)
+        sigma = spec.std(axis=1, keepdims=True) + EPS
+        spec = (spec - mu) / sigma
+    else:
+        spec = (spec - spec.mean()) / (spec.std() + EPS)
+    return spec.astype(np.float32)
+
 
 def clear_output_folder(output_folder):
+    """Create an output directory and remove all existing contents."""
     os.makedirs(output_folder, exist_ok=True)
     for entry in os.scandir(output_folder):
         if entry.is_dir(follow_symlinks=False):
@@ -31,20 +95,18 @@ if __name__ == '__main__':
     parser.add_argument('sample_length', help='Number of packet in a sample', type=int)
     parser.add_argument('sliding', help='Number of packet for sliding operations', type=int)
     parser.add_argument('noise_level', help='Level for the noise to be removed', type=float)
-    parser.add_argument('--bandwidth', help='Bandwidth in [MHz] to select the subcarriers, can be 20, 40, 80 '
-                                            '(default 80)', default=80, required=False, type=int)
-    parser.add_argument('--sub_band', help='Sub_band idx in [1, 2, 3, 4] for 20 MHz, [1, 2] for 40 MHz '
-                                           '(default 1)', default=1, required=False, type=int)
-    # New arguments added here
-    parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
-    parser.add_argument('--fft', help='Number of FFT values (default 1024)', default=1024, required=False, type=int)
+    parser.add_argument('--bandwidth', help='Bandwidth in [MHz]', default=80, required=False, type=int)
+    parser.add_argument('--sub_band', help='Sub_band idx', default=1, required=False, type=int)
+    parser.add_argument('--tc', help='Time parameter Tc in seconds', default=6e-3, required=False, type=float)
+    parser.add_argument('--fft', help='Number of FFT values', default=1024, required=False, type=int)
+    parser.add_argument('--prep_version', choices=['default', 'v1', 'v3', 'v4'], default='v4', 
+                        help='Choose the spectrogram preprocessing method')
     
     args = parser.parse_args()
 
-    num_symbols = args.sample_length  # 51
+    num_symbols = args.sample_length 
     middle = int(mt.floor(num_symbols / 2))
 
-    # Use the dynamic Tc variable
     Tc = args.tc
     fc = 5e9
     v_light = 3e8
@@ -58,7 +120,7 @@ if __name__ == '__main__':
     list_subdir = args.subdirs
 
     print("\n" + "#"*60)
-    print("#  DOPPLER COMPUTATION PIPELINE START")
+    print(f"#  DOPPLER COMPUTATION PIPELINE START (PREP: {args.prep_version.upper()})")
     print("#"*60)
 
     for subdir in list_subdir.split(','):
@@ -73,34 +135,21 @@ if __name__ == '__main__':
             if (all_files[i][-4:] == '.mat'):
                 names.append(all_files[i][:-4])
 
-        # print(f"\n[Input] Directory: {exp_dir}")
-        # print(f"[Found] {len(names)} files to process")
-        # print(f"[Output] Directory: {path_doppler}")
-        # print(f"[Parameters] BW: {bandwidth} MHz, Samples: {args.sample_length}, Sliding: {sliding}, Noise: {noise_lev} dB, Tc: {Tc}s, FFT: {args.fft}")
-        # print("-"*60)
-
         for name in tqdm(names, desc=f"Processing {subdir or '/'}", unit="file"):
             file_start = time.time()
             path_doppler_name = path_doppler + '/' + name + '.txt'
             
-            # print(f"\n{'='*60}")
-            # print(f"Processing: {name}")
-            # print(f"{'='*60}")
-
             name_file = exp_dir + name + '.mat'
             mdic = sio.loadmat(name_file)
             csi_matrix_processed = mdic['CSI']
-            # print(f"  • Input shape: {csi_matrix_processed.shape}")
-            # print(f"  • Data type: {csi_matrix_processed.dtype}")
 
             csi_matrix_processed = csi_matrix_processed[args.start:args.end, :, :]
-            # print(f"  • Sliced shape: {csi_matrix_processed.shape}")
             
             csi_matrix_complete = csi_matrix_processed[:, :, 0]*np.exp(1j*csi_matrix_processed[:, :, 1])
 
             csi_d_profile_list = []
-            # print(f"  • Computing Doppler profiles...")
             num_iterations = (csi_matrix_complete.shape[0] - num_symbols) // sliding
+            
             for i in range(0, csi_matrix_complete.shape[0]-num_symbols, sliding):
                 csi_matrix_cut = csi_matrix_complete[i:i+num_symbols, :]
                 csi_matrix_cut = np.nan_to_num(csi_matrix_cut)
@@ -108,29 +157,41 @@ if __name__ == '__main__':
                 hann_window = np.expand_dims(hann(num_symbols), axis=-1)
                 csi_matrix_wind = np.multiply(csi_matrix_cut, hann_window)
                 
-                # Use the dynamic FFT size here
                 csi_doppler_prof = fft(csi_matrix_wind, n=args.fft, axis=0)
                 csi_doppler_prof = fftshift(csi_doppler_prof, axes=0)
 
                 csi_d_map = np.abs(csi_doppler_prof * np.conj(csi_doppler_prof))
                 csi_d_map = np.sum(csi_d_map, axis=1)
                 
-                csi_d_map = gaussian_filter1d(csi_d_map, sigma=1.0) ###
+                csi_d_map = gaussian_filter1d(csi_d_map, sigma=1.0) 
                 
                 csi_d_profile_list.append(csi_d_map)
+                
             csi_d_profile_array = np.asarray(csi_d_profile_list)
-            csi_d_profile_array_max = np.max(csi_d_profile_array, axis=1, keepdims=True)
-            csi_d_profile_array = csi_d_profile_array/csi_d_profile_array_max
-            csi_d_profile_array[csi_d_profile_array < mt.pow(10, noise_lev)] = mt.pow(10, noise_lev)
+            
+            # ADDED: Branching logic for the chosen preprocessing method
+            if args.prep_version == 'default':
+                # Original logic
+                csi_d_profile_array_max = np.max(csi_d_profile_array, axis=1, keepdims=True)
+                csi_d_profile_array = csi_d_profile_array/csi_d_profile_array_max
+                csi_d_profile_array[csi_d_profile_array < mt.pow(10, noise_lev)] = mt.pow(10, noise_lev)
+            else:
+                # MODIFIED: Transpose array to (Freq, Time) to match V1/V3/V4 expectations
+                spec_freq_time = csi_d_profile_array.T 
+                
+                if args.prep_version == 'v1':
+                    spec_freq_time = v1_log_dc_removal(spec_freq_time)
+                elif args.prep_version == 'v3':
+                    spec_freq_time = v3_percentile_normalization(spec_freq_time)
+                elif args.prep_version == 'v4':
+                    spec_freq_time = v4_noise_floor_masking(spec_freq_time)
+                
+                # MODIFIED: Transpose back to (Time, Freq) for downstream compatibility
+                csi_d_profile_array = spec_freq_time.T 
 
             with open(path_doppler_name, "wb") as fp:  
                 pickle.dump(csi_d_profile_array, fp)
             
-            file_elapsed = time.time() - file_start
-            # print(f"  • Output shape: {csi_d_profile_array.shape}")
-            # print(f"✓ Saved to: {path_doppler_name}")
-            # print(f"  • Time elapsed: {file_elapsed:.2f}s")
-    
     print("\n" + "#"*60)
     print("#  DOPPLER COMPUTATION COMPLETED")
     print("#"*60 + "\n")
