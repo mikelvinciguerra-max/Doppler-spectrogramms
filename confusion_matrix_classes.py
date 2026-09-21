@@ -2,16 +2,15 @@ import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 from model import CNN
 from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
 DEFAULT_MODEL_DIR = 'models/tests'
-MATRIX_DIR = 'matrix/tests'
+DEFAULT_MATRIX_DIR = 'matrix/tests'
 
 CLASS_NAME_BY_INDEX = {
     0: 'Class 0',
@@ -34,13 +33,39 @@ def get_filename_class_suffix(target_classes):
     return '-'.join(str(int(class_id)) for class_id in target_classes)
 
 
-def filter_dataset_by_classes(dataset, target_classes):
-    target_set = set(target_classes)
-    filtered_indices = [i for i in range(len(dataset)) if int(dataset[i][1].item()) in target_set]
-    return Subset(dataset, filtered_indices)
+def build_confusion_matrix(labels, predictions, num_classes):
+    matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for label, prediction in zip(labels, predictions):
+        if 0 <= label < num_classes and 0 <= prediction < num_classes:
+            matrix[label, prediction] += 1
+    row_totals = matrix.sum(axis=1, keepdims=True)
+    return np.divide(matrix, row_totals, out=np.zeros_like(matrix, dtype=float), where=row_totals != 0)
 
 
-def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=BATCH_SIZE, save=True, test_envs=None):
+# ADDED: MappedDataset imported from train script to handle the 3-channel gradient extraction
+class MappedDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, indices, label_to_index):
+        self.base_dataset = base_dataset
+        self.indices = list(indices)
+        self.label_to_index = label_to_index
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        sample_idx = self.indices[idx]
+        x, y = self.base_dataset[sample_idx]
+        label = int(y.item())
+        
+        # Extract spectral and temporal dynamics for the 3-channel model
+        grad_freq, grad_time = torch.gradient(x[0], dim=(0, 1))
+        x_enhanced = torch.stack([x[0], grad_freq, grad_time], dim=0)
+        
+        return x_enhanced, torch.tensor(self.label_to_index[label], dtype=torch.long)
+
+
+def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=BATCH_SIZE,
+                                          save=True, test_envs=None, matrix_dir=DEFAULT_MATRIX_DIR):
     """Loads a checkpoint saved by `train.py` / `confusion_matrix.py` and
     computes+plots the confusion matrix across all test environments
     (environments != train_env) for the target classes saved in the checkpoint.
@@ -58,10 +83,14 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
         target_classes = sorted(checkpoint['target_classes'])
     else:
         target_classes = list(range(num_classes))
+        
+    label_to_index = {int(cls): idx for idx, cls in enumerate(target_classes)}
 
     # Build model and load weights
-    model = CNN(input_channels=1, num_classes=num_classes).to(device)
-    dummy = torch.zeros(1, 1, 32, 32).to(device)
+    # MODIFIED: input_channels changed from 1 to 3 to support gradient features
+    model = CNN(input_channels=3, num_classes=num_classes).to(device)
+    # MODIFIED: dummy tensor shape updated to match the new 3-channel input
+    dummy = torch.zeros(1, 3, 32, 32).to(device)
     model(dummy)  # initialize lazy layers
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
@@ -71,10 +100,11 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
 
     # Determine which test environments to evaluate
     if test_envs is None:
-        eval_envs = [e for e in env_names if e != train_env]
+        eval_envs = [e for e in env_names if e != train_env[-1]]
     else:
         # Normalize inputs like 'doppler_output_a' or 'a' -> 'a'
         eval_envs = [t.split('_')[-1] if '_' in t else t for t in test_envs]
+        
     # Loop over the chosen test environments and collect predictions
     for test_env in eval_envs:
         env_dir = os.path.join(root_dir, "doppler_output_" + test_env)
@@ -83,49 +113,53 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
             continue
 
         dataset = load_dataset_with_cache(env_dir)
-        filtered = filter_dataset_by_classes(dataset, target_classes)
-        loader = DataLoader(filtered, batch_size=batch_size, shuffle=False)
+        
+        # MODIFIED: Use MappedDataset for proper 3-channel filtering and dynamic extraction
+        target_set = set(target_classes)
+        filtered_indices = [i for i in range(len(dataset)) if int(dataset[i][1].item()) in target_set]
+        mapped_dataset = MappedDataset(dataset, filtered_indices, label_to_index)
+        
+        loader = DataLoader(mapped_dataset, batch_size=batch_size, shuffle=False)
 
         with torch.no_grad():
             for x, y in loader:
                 x = x.to(device)
                 preds = torch.argmax(model(x), dim=1)
                 all_preds.extend(preds.cpu().numpy())
+                # Labels from MappedDataset are already converted to indices (0 to num_classes-1)
                 all_labels.extend(y.numpy())
 
     labels = list(range(len(target_classes)))
-    display_labels = [CLASS_NAME_BY_INDEX.get(target_classes[i], f'Class {target_classes[i]}') for i in labels]
+    display_labels = get_display_labels(target_classes)
     if not all_labels:
         raise RuntimeError(f"No test samples found for target classes {target_classes}")
 
-    mapped_labels = [int(label) for label in all_labels]
-    mapped_preds = [int(pred) for pred in all_preds]
-    label_to_index = {int(cls): idx for idx, cls in enumerate(target_classes)}
-    mapped_labels = [label_to_index[int(label)] for label in mapped_labels]
-
-    cm = confusion_matrix(mapped_labels, mapped_preds, labels=labels, normalize='true')
+    cm = build_confusion_matrix(all_labels, all_preds, len(labels))
     print(f"Classes displayed: {list(zip(labels, display_labels))}")
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
-    disp.plot(cmap=plt.cm.Blues, ax=ax, values_format='.2f')
-    try:
-        ax.images[0].set_clim(0, 1)
-    except Exception:
-        pass
+    image = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues, vmin=0, vmax=1)
+    fig.colorbar(image, ax=ax)
+    ax.set(xticks=labels, yticks=labels, xticklabels=display_labels, yticklabels=display_labels)
+    threshold = cm.max() / 2 if cm.size else 0
+    for row in labels:
+        for column in labels:
+            ax.text(column, row, f'{cm[row, column]:.2f}',
+                    ha='center', va='center',
+                    color='white' if cm[row, column] > threshold else 'black')
 
     plt.title(f"Confusion Matrix — trained on {train_env} ({epochs} epochs, {k_folds}-fold CV)")
     plt.xlabel('Predicted')
     plt.ylabel('True')
 
     if save:
-        os.makedirs(MATRIX_DIR, exist_ok=True)
+        os.makedirs(matrix_dir, exist_ok=True)
         train_label = str(train_env).split('_')[-1]
         test_labels = [str(env).split('_')[-1] for env in eval_envs]
         test_label = '-'.join(test_labels)
         class_suffix = get_filename_class_suffix(target_classes)
         kfold_suffix = f"_kfolds_{k_folds}" if k_folds != 'unknown' else ''
-        save_path = os.path.join(MATRIX_DIR, f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}{kfold_suffix}.png")
+        save_path = os.path.join(matrix_dir, f"train_{train_label}_test_{test_label}_classes_{class_suffix}_epochs_{epochs}{kfold_suffix}.png")
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
         print(f"Saved confusion matrix -> {save_path}")
@@ -143,7 +177,7 @@ def find_checkpoint_for_train(train_env, model_dir='models', classes=None, epoch
     if classes:
         classes_str = '-'.join(map(str, sorted(classes)))
 
-    pattern = os.path.join(model_dir, f"model_doppler_{train_letter}_classes_*.pth")
+    pattern = os.path.join(model_dir, f"{train_letter}_classes_*.pth")
     candidates = glob.glob(pattern)
     if classes_str:
         candidates = [c for c in candidates if f"classes_{classes_str}_" in os.path.basename(c) or f"classes_{classes_str}.pth" in os.path.basename(c)]
@@ -168,6 +202,7 @@ def main():
     parser.add_argument('--train-env', required=True, help="Training environment identifier (letter like 'a' or 'doppler_output_a')")
     parser.add_argument('--test-envs', nargs='+', help="One or more test environment identifiers (letters like 'b c')")
     parser.add_argument('--model-dir', default=DEFAULT_MODEL_DIR, help='Directory where checkpoints are stored')
+    parser.add_argument('--matrix-dir', default=DEFAULT_MATRIX_DIR, help='Directory where the matrix image is saved')
     parser.add_argument('--epochs', type=int, help='Filter model by epoch count if desired')
     parser.add_argument('--k-folds', type=int, help='Filter model by k-fold count if desired')
     parser.add_argument('--classes', nargs='+', type=int, help='Target classes to consider (overrides checkpoint if provided)')
@@ -192,10 +227,13 @@ def main():
         # default: all except training env
         if env_names is None:
             raise RuntimeError('Checkpoint does not contain env_names; please provide --test-envs')
-        test_envs = [e for e in env_names if e != train_env_ckpt]
+        # Check against the last letter to handle both formats ('doppler_output_a' and 'a')
+        train_suffix = train_env_ckpt[-1] if isinstance(train_env_ckpt, str) else train_env_ckpt
+        test_envs = [e for e in env_names if e != train_suffix]
 
     # Call the plotting routine which will load model and process these test envs
-    cm = plot_confusion_matrix_from_checkpoint(model_path, device=device, batch_size=args.batch_size, save=True, test_envs=test_envs)
+    cm = plot_confusion_matrix_from_checkpoint(model_path, device=device, batch_size=args.batch_size,
+                                               save=True, test_envs=test_envs, matrix_dir=args.matrix_dir)
     print('Confusion matrix (percentages):')
     print(np.array2string(cm, formatter={'float_kind':lambda x: f"{x:.1f}"}))
 
