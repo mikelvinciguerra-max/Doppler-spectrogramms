@@ -9,8 +9,8 @@ from model import CNN
 from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
-DEFAULT_MODEL_DIR = 'models/tests'
-DEFAULT_MATRIX_DIR = 'matrix/tests'
+DEFAULT_MODEL_DIR = 'models/'
+DEFAULT_MATRIX_DIR = 'matrix/'
 
 CLASS_NAME_BY_INDEX = {
     0: 'Class 0',

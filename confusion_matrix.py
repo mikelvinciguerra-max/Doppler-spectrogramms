@@ -10,8 +10,8 @@ from model import CNN
 from dataset import load_dataset_with_cache
 
 BATCH_SIZE = 64
-MODEL_DIR = "models/tests2"
-MATRIX_DIR = "matrix/tests2"
+MODEL_DIR = "models/"
+MATRIX_DIR = "matrix/"
 
 
 def normalize_target_classes(classes):
