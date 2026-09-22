@@ -1,5 +1,10 @@
 # CSI-Based Doppler Spectrograms for Human Activity Recognition
 
+This repository contains the preprocessing, Doppler extraction, CNN training,
+and evaluation code used for CSI-based people-counting experiments. The code
+currently targets five classes: empty scene (`0`) and one to four people
+(`1`-`4`).
+
 ## Abstract
 
 This repository implements a signal-processing and deep-learning pipeline for human activity recognition from Wi‑Fi Channel State Information (CSI). The proposed approach converts raw CSI measurements into Doppler spectrograms, which encode motion-induced frequency shifts associated with human movement. These spectrograms are then used as inputs to a convolutional neural network (CNN) for supervised classification.
@@ -81,7 +86,15 @@ The repository supports multiple data environments, typically represented by fol
 - c/
 - d/
 
-This organization is useful for evaluating environment generalization, where a model is trained on one environment and tested on others.
+This organization is useful for evaluating environment generalization, where a model is trained on one environment and tested on others. In the local
+repository, the corresponding generated folders are named
+`doppler_output_a`, `doppler_output_b`, `doppler_output_c`, and
+`doppler_output_d`.
+
+The repository also contains a small example dataset in `data_ehunam/`, its
+processed version in `data_preprocessed/`, and generated Doppler profiles in
+`doppler_output/`. These folders are useful for inspecting the pipeline, but
+large-scale experiments may use an external dataset root.
 
 ---
 
@@ -149,7 +162,9 @@ The dataset supports:
 - cached loading for RAM-efficient execution
 - class filtering based on selected labels
 
-This allows the system to work with datasets of varying size while preserving reproducibility and computational efficiency.
+This allows the system to work with datasets of varying size while preserving reproducibility and computational efficiency. Doppler files are stored as
+pickled Python objects despite their `.txt` extension; they should be read by
+the project dataset loader rather than treated as plain text.
 
 ---
 
@@ -187,7 +202,9 @@ The procedure includes:
 
 The script also computes class weights and supports evaluation on a held-out test subset. This helps mitigate class imbalance and provides a more reliable estimate of generalization performance.
 
-The trained model is saved in the `models/` directory under a filename encoding the environment, class set, epoch count, and fold configuration.
+The trained model is saved in the `models/` directory under a filename encoding the environment, class set, epoch count, and fold configuration. By default,
+`train.py` automatically resumes from a compatible checkpoint with fewer
+epochs. Use `--resume none` to force a fresh run.
 
 ---
 
@@ -215,6 +232,10 @@ Several utilities are provided to visualize the extracted Doppler signatures and
 - confusion matrices
 - spectrogram summaries across experiments
 
+The repository also includes separate scripts for synthetic data generation
+(`generate_synthetic_doppler.py` and `generate_synthetic_doppler_alea.py`) and
+for comparing antenna or implementation variants.
+
 These visualizations are useful for both qualitative inspection and quantitative validation of the signal-processing pipeline.
 
 ---
@@ -230,11 +251,16 @@ The repository contains the following main components:
 - `train.py` — training routine
 - `eval.py` — cross-environment evaluation
 - `confusion_matrix.py` — confusion matrix generation
+- `confusion_matrix_classes.py` — confusion matrix for a selected training and test environment
+- `confusion_matrix_synthetic.py` — confusion matrix for the synthetic dataset
 - `run_experiments.sh` — automated experiment runner
 - `run_cnn.sh` — training and evaluation helper
 - `prepare_data_for_cnn.sh` — example full preprocessing workflow
+- `generate_synthetic_doppler.py` — deterministic synthetic Doppler dataset
+- `generate_synthetic_doppler_alea.py` — synthetic dataset with signal variation
 - `data_preprocessed/` — processed CSI files
 - `doppler_output/` — extracted Doppler profiles
+- `doppler_output_synthetic/` — synthetic Doppler profiles
 - `models/` — saved trained checkpoints
 - `matrix/` — performance plots and confusion outputs
 - `plots/` — visualization outputs
@@ -243,25 +269,67 @@ The repository contains the following main components:
 
 ## 13. Usage
 
-### 13.1 Preprocessing
+### 13.1 Environment setup
+
+The project requires Python 3 and the scientific Python and PyTorch packages
+used by the scripts, including NumPy, SciPy, scikit-learn, Matplotlib,
+PyTorch, and tqdm. No lockfile or requirements file is currently provided;
+install the versions appropriate for the target machine before running the
+pipeline.
+
+All commands below are run from the repository root.
+
+### 13.2 Preprocessing
 
 ```bash
 python3 preprocessing.py /path/to/raw_data /path/to/preprocessed_data
 ```
 
-### 13.2 Doppler extraction
+Optional arguments are `--workers` and `--max_files_per_class`. The current
+preprocessing implementation removes unsupported subcarriers, calibrates
+phase, normalizes amplitude, and subtracts the temporal mean.
+
+### 13.3 Doppler extraction
 
 ```bash
 python3 my_doppler_computation.py /path/to/preprocessed_data/ "" /path/to/doppler_output/ 0 2000000 256 220 -0.7 --tc 8.5e-4 --fft 1024
 ```
 
-### 13.3 Training
+The positional arguments are, in order: input directory, subdirectories,
+output directory, start index, end index, sample length, sliding step, and
+noise level. Optional parameters include `--bandwidth`, `--sub_band`, `--tc`,
+`--fft`, and `--prep_version` (`default`, `v1`, `v3`, or `v4`).
+
+To visualize extracted profiles:
+
+```bash
+python3 my_doppler_plot_activities.py /path/to/doppler_output /path/to/plots 1024 220 0 2000000 --tc 8.5e-4
+```
+
+### 13.4 Synthetic quick start
+
+The synthetic pipeline is useful for checking the installation without a raw
+CSI recording:
+
+```bash
+python3 generate_synthetic_doppler.py
+python3 train.py --train_env doppler_output_synthetic --root_dir . --classes 0 1 2 3 4 --epochs 10 --k-folds 1 --resume none
+python3 confusion_matrix_synthetic.py
+```
+
+Use `generate_synthetic_doppler_alea.py` for the variant with additional
+signal variability.
+
+### 13.5 Training
 
 ```bash
 python3 train.py --train_env doppler_output_a --epochs 20 --root_dir /path/to/root --classes 0 1 2 3 4
 ```
 
-### 13.4 Training with k-fold cross-validation
+The default classes are `0 1 2 3 4`. The `--focal_gamma`, `--batch_size`, and
+`--resume` options are also available.
+
+### 13.6 Training with k-fold cross-validation
 
 ```bash
 python3 train.py --train_env doppler_output_a --epochs 20 --k-folds 3 --root_dir /path/to/root --classes 0 1 2 3 4
@@ -269,25 +337,38 @@ python3 train.py --train_env doppler_output_a --epochs 20 --k-folds 3 --root_dir
 
 This performs a stratified k-fold validation on the training pool and reports the mean validation score across folds.
 
-### 13.5 Evaluation
+### 13.7 Evaluation
 
 ```bash
-python3 eval.py --env a --epochs 20 --classes 0 1 2 3 4
+python3 eval.py --env a --epochs 20 --k-folds 1 --classes 0 1 2 3 4
 ```
 
-### 13.6 Confusion matrix generation
+For a custom train/test environment pair:
 
 ```bash
-python3 confusion_matrix.py --epochs 20 --classes 0 1 2 3 4
+python3 confusion_matrix_classes.py --train-env a --test-envs b c --epochs 20 --k-folds 1 --classes 0 1 2 3 4
 ```
 
-### 13.7 Batch training script example
+### 13.8 Confusion matrix generation
+
+```bash
+python3 confusion_matrix.py --epochs 20 --k-folds 1 --classes 0 1 2 3 4
+```
+
+### 13.9 Batch training script example
 
 ```bash
 ./run_cnn.sh 20 3 /path/to/root 0 1 2 3 4
 ```
 
-This script runs the training pipeline for a selected environment with the specified number of epochs and k-folds, then evaluates the resulting model.
+This script trains on environments `a`, `b`, `c`, and `d`, then generates a
+confusion matrix. Its arguments are `epochs`, `k-folds`, the dataset root, and
+the optional class list. It writes timestamped logs to `logs/` and timing
+information to `resultats.txt`.
+
+`prepare_data_for_cnn.sh` contains the full four-environment preprocessing and
+Doppler extraction example. Its paths point to an external storage volume and
+must be adapted before use.
 
 ---
 
