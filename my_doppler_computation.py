@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 EPS = 1e-10
 
-# ADDED: V1 Processing Function
 def v1_log_dc_removal(spectrogram, dc_bins=1, clip_db=40.0):
     """Remove central DC bins and normalize spectrogram values in dB.
 
@@ -35,7 +34,6 @@ def v1_log_dc_removal(spectrogram, dc_bins=1, clip_db=40.0):
     spec_norm = (spec_db - floor) / (clip_db + EPS)
     return spec_norm.astype(np.float32)
 
-# ADDED: V3 Processing Function
 def v3_percentile_normalization(spectrogram, low_pct=1, high_pct=99):
     """Clip a spectrogram to percentiles and normalize it to ``[0, 1]``.
 
@@ -52,7 +50,6 @@ def v3_percentile_normalization(spectrogram, low_pct=1, high_pct=99):
     spec = (spec - lo) / (hi - lo + EPS)
     return spec.astype(np.float32)
 
-# ADDED: V4 Processing Function
 def v4_noise_floor_masking(spectrogram, noise_floor_pct=20, per_bin=True):
     """Mask values below a percentile noise floor and standardize the result.
 
@@ -169,25 +166,21 @@ if __name__ == '__main__':
                 
             csi_d_profile_array = np.asarray(csi_d_profile_list)
             
-            # ADDED: Branching logic for the chosen preprocessing method
             if args.prep_version == 'default':
-                # Original logic
                 csi_d_profile_array_max = np.max(csi_d_profile_array, axis=1, keepdims=True)
-                csi_d_profile_array = csi_d_profile_array/csi_d_profile_array_max
+                csi_d_profile_array = csi_d_profile_array / csi_d_profile_array_max
                 csi_d_profile_array[csi_d_profile_array < mt.pow(10, noise_lev)] = mt.pow(10, noise_lev)
             else:
-                # MODIFIED: Transpose array to (Freq, Time) to match V1/V3/V4 expectations
-                spec_freq_time = csi_d_profile_array.T 
-                
+                spec_freq_time = csi_d_profile_array.T
+
                 if args.prep_version == 'v1':
                     spec_freq_time = v1_log_dc_removal(spec_freq_time)
                 elif args.prep_version == 'v3':
                     spec_freq_time = v3_percentile_normalization(spec_freq_time)
                 elif args.prep_version == 'v4':
                     spec_freq_time = v4_noise_floor_masking(spec_freq_time)
-                
-                # MODIFIED: Transpose back to (Time, Freq) for downstream compatibility
-                csi_d_profile_array = spec_freq_time.T 
+
+                csi_d_profile_array = spec_freq_time.T
 
             with open(path_doppler_name, "wb") as fp:  
                 pickle.dump(csi_d_profile_array, fp)

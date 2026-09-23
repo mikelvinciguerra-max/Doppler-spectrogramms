@@ -94,8 +94,6 @@ def plot_and_save_synthetic_dataset(dataset_folder="doppler_output_synthetic"):
     output_dir = os.path.join("plots", "plots_synthetic")
     os.makedirs(output_dir, exist_ok=True)
 
-    # MODIFIED: Removed the single large figure creation before the loop.
-    
     for i, file in enumerate(files):
         with open(file, 'rb') as f:
             data = pickle.load(f)
@@ -103,10 +101,7 @@ def plot_and_save_synthetic_dataset(dataset_folder="doppler_output_synthetic"):
         sample_1024 = data[0]
         image_32x32 = sample_1024.reshape(32, 32)
         
-        # ADDED: Create a new distinct figure for each plot
         plt.figure(figsize=(4, 4))
-        
-        # MODIFIED: Removed plt.subplot() since we are saving separate files
         plt.imshow(image_32x32, origin='lower', cmap='viridis', aspect='auto')
         
         filename = os.path.basename(file)
@@ -114,14 +109,10 @@ def plot_and_save_synthetic_dataset(dataset_folder="doppler_output_synthetic"):
         plt.axis('off') 
         plt.tight_layout()
         
-        # ADDED: Generate a specific save path for the current individual plot
         plot_filename = f"plot_{os.path.splitext(filename)[0]}.png"
         save_path = os.path.join(output_dir, plot_filename)
-        
-        # MODIFIED: Save the individual figure
+
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        
-        # ADDED: Close the figure to avoid overlapping images in memory
         plt.close()
         
         print(f"Plot successfully saved to: {save_path}")

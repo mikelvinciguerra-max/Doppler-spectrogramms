@@ -42,7 +42,6 @@ def build_confusion_matrix(labels, predictions, num_classes):
     return np.divide(matrix, row_totals, out=np.zeros_like(matrix, dtype=float), where=row_totals != 0)
 
 
-# ADDED: MappedDataset imported from train script to handle the 3-channel gradient extraction
 class MappedDataset(torch.utils.data.Dataset):
     def __init__(self, base_dataset, indices, label_to_index):
         self.base_dataset = base_dataset
@@ -86,10 +85,8 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
         
     label_to_index = {int(cls): idx for idx, cls in enumerate(target_classes)}
 
-    # Build model and load weights
-    # MODIFIED: input_channels changed from 1 to 3 to support gradient features
+    # Build model and load weights.
     model = CNN(input_channels=3, num_classes=num_classes).to(device)
-    # MODIFIED: dummy tensor shape updated to match the new 3-channel input
     dummy = torch.zeros(1, 3, 32, 32).to(device)
     model(dummy)  # initialize lazy layers
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -114,7 +111,6 @@ def plot_confusion_matrix_from_checkpoint(model_path, device='cpu', batch_size=B
 
         dataset = load_dataset_with_cache(env_dir)
         
-        # MODIFIED: Use MappedDataset for proper 3-channel filtering and dynamic extraction
         target_set = set(target_classes)
         filtered_indices = [i for i in range(len(dataset)) if int(dataset[i][1].item()) in target_set]
         mapped_dataset = MappedDataset(dataset, filtered_indices, label_to_index)
@@ -190,7 +186,6 @@ def find_checkpoint_for_train(train_env, model_dir='models', classes=None, epoch
         raise FileNotFoundError(f"No checkpoint found for train env '{train_env}' in {model_dir}. Searched pattern: {pattern}")
 
     if len(candidates) > 1:
-        # pick the most recently modified
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         print(f"Multiple checkpoints found, selecting newest: {os.path.basename(candidates[0])}")
 

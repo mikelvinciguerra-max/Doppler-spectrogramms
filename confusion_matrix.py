@@ -20,7 +20,6 @@ def normalize_target_classes(classes):
     return sorted({int(cls) for cls in classes if 0 <= int(cls) <= 4})
 
 
-# ADDED: MappedDataset imported from train script to handle the 3-channel gradient extraction
 class MappedDataset(torch.utils.data.Dataset):
     def __init__(self, base_dataset, indices, label_to_index):
         self.base_dataset = base_dataset
@@ -42,7 +41,6 @@ class MappedDataset(torch.utils.data.Dataset):
         return x_enhanced, torch.tensor(self.label_to_index[label], dtype=torch.long)
 
 
-# MODIFIED: Simplified evaluate_accuracy because MappedDataset now inherently handles filtering and label mapping
 def evaluate_accuracy(model, loader, device):
     model.eval()
     correct, total = 0, 0
@@ -142,7 +140,6 @@ if __name__ == "__main__":
         target_classes = sorted(checkpoint['target_classes'])
     print(f"Using target classes: {target_classes}")
     
-    # ADDED: Create the mapping dictionary to safely translate labels to matrix indices
     label_to_index = {label: idx for idx, label in enumerate(target_classes)}
     
     n_envs = len(env_names)
@@ -167,11 +164,8 @@ if __name__ == "__main__":
             
         print(f"\n--- Evaluating model trained on: {train_env} ---")
         
-        # Load the model specific to this environment
-        # MODIFIED: input_channels changed from 1 to 3 to support gradient features
+        # Load the model specific to this environment.
         model = CNN(input_channels=3, num_classes=num_classes).to(device)
-        
-        # MODIFIED: dummy tensor shape updated to match the new 3-channel input
         dummy = torch.zeros(1, 3, 32, 32).to(device)
         model(dummy) 
         
@@ -193,7 +187,6 @@ if __name__ == "__main__":
             
             # Same environment as training: restrict to the held-out test split, otherwise
             # this diagonal cell reuses samples seen during training/validation.
-            # MODIFIED: Wrapped all test sets in MappedDataset to enable 3-channel extraction
             if i == j and test_indices is not None:
                 test_mapped_dataset = MappedDataset(test_dataset, test_indices, label_to_index)
             else:
@@ -202,8 +195,7 @@ if __name__ == "__main__":
 
             test_loader = DataLoader(test_mapped_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-            # Accuracy calculation
-            # MODIFIED: Removed target_classes argument since MappedDataset handles the labeling
+            # Accuracy calculation.
             acc = evaluate_accuracy(model, test_loader, device)
             
             # Store in the matrix: i = Test (row), j = Train (column)

@@ -76,7 +76,6 @@ def parse_ehunam_filename(filename):
         
     return f"{title_line1}\n{title_line2}"
 
-# New 'Tc' parameter added to the function
 def plot_spectrograms(stft_log, feature_length, sliding, start_plt, end_plt, out_dir, custom_title, Tc):
     """Plot Doppler spectrograms directly without splitting"""
     
@@ -118,7 +117,6 @@ if __name__ == '__main__':
     parser.add_argument('sliding', help='Sliding step size (e.g., 32)', type=int)
     parser.add_argument('start_plt', help='Start index for plotting (e.g., 0)', type=int)
     parser.add_argument('end_plt', help='End index for plotting (e.g., 256)', type=int)
-    # New argument added here
     parser.add_argument('--tc', help='Time parameter Tc in seconds (default 6e-3)', default=6e-3, required=False, type=float)
 
     args = parser.parse_args()

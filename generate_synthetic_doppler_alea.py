@@ -16,29 +16,23 @@ def generate_people_signal(fs=1000, duration=5.0, num_people=0):
     sig = np.zeros_like(t, dtype=complex)
     
     if num_people == 0:
-        # ADDED: Add a tiny bit of background white noise even for the empty class
-        # This prevents the matrix from being absolute zero, which can sometimes cause NaN losses
         noise = np.random.normal(0, 0.01, size=t.shape) + 1j * np.random.normal(0, 0.01, size=t.shape)
         return t, sig + noise
-        
-    # MODIFIED: Renamed base parameters
+
     base_f_modulations = [1.8, 2.2, 1.5, 2.6]
     base_f_deviations = [60.0, -75.0, 45.0, -90.0] 
     
     for i in range(min(num_people, len(base_f_modulations))):
-        # ADDED: Random variations for each sample to create dataset diversity (Train vs Valid)
-        # Random walking speed variation (+/- 0.3 Hz)
+        # Random walking speed variation (+/- 0.3 Hz).
         f_mod = base_f_modulations[i] + np.random.uniform(-0.3, 0.3)
-        # Random direction/velocity variation (+/- 10 Hz)
+        # Random direction/velocity variation (+/- 10 Hz).
         f_dev = base_f_deviations[i] + np.random.uniform(-10.0, 10.0)
-        # Random phase shift (simulate people starting their steps at different times)
+        # Random phase shift to simulate people starting their steps at different times.
         phase_shift = np.random.uniform(0, 2 * np.pi)
-        
-        # MODIFIED: Included phase_shift in the cosine calculation
+
         phase = -(f_dev / f_mod) * np.cos(2 * np.pi * f_mod * t + phase_shift)
         sig += np.exp(1j * phase)
-        
-    # ADDED: Add slight background noise to make it slightly more realistic
+
     noise = np.random.normal(0, 0.05, size=t.shape) + 1j * np.random.normal(0, 0.05, size=t.shape)
     sig += noise
         
@@ -137,8 +131,7 @@ def plot_and_save_synthetic_dataset(dataset_folder="doppler_output_synthetic"):
 
 def main():
     dataset_folder = "doppler_output_synthetic"
-    # MODIFIED: Ensuring 100 samples per class are generated for a decent dataset size
-    print(f"Generating perfect synthetic dataset with variance in '{dataset_folder}'...")
+    print(f"Generating synthetic dataset with variance in '{dataset_folder}'...")
     generate_dataset(output_dir=dataset_folder, num_samples_per_class=100)
     
     print("\nGenerating and saving individual plots...")

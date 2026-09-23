@@ -78,10 +78,10 @@ def main():
     plt.close()
 
     accuracy = np.trace(confusion) / confusion.sum()
-    print("Matrice brute :")
+    print("Raw confusion matrix:")
     print(confusion)
-    print(f"Accuracy test : {accuracy:.4f}")
-    print(f"Matrice normalisée sauvegardée : {OUTPUT_PATH}")
+    print(f"Test accuracy: {accuracy:.4f}")
+    print(f"Normalized matrix saved to: {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
